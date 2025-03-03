@@ -437,6 +437,20 @@ public class MerkleTree {
         return rootHash;
     }
 
+    public void revertUnsavedChanges() {
+        lock.writeLock().lock();
+        try {
+            nodesCache.clear();
+            hangingNodes.clear();
+
+            loadMetaData();
+        } catch (RocksDBException e) {
+            throw new RuntimeException(e);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
     /**
      * Close the databases (optional, if you need cleanup).
      */
