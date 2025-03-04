@@ -365,6 +365,23 @@ public class MerkleTree {
         }
     }
 
+    public void updateLeaf(byte[] oldLeafHash, byte[] newLeafHash) {
+        lock.writeLock().lock();
+        try {
+            Node leaf = getNodeByHash(oldLeafHash);
+
+            if(leaf == null) {
+                throw new RuntimeException("Leaf not found");
+            } else {
+                leaf.updateNodeHash(newLeafHash);
+            }
+        } catch (RocksDBException e) {
+            throw new RuntimeException(e);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
     /**
      * Add a node at a given level.
      */
