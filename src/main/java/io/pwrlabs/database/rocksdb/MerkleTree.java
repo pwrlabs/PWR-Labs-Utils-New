@@ -540,6 +540,7 @@ public class MerkleTree {
             //Copy metadata
             this.numLeaves = sourceTree.numLeaves;
             this.depth = sourceTree.depth;
+            this.rootHash = sourceTree.getRootHash(); // Ensure root hash matches source tree
 
             //Copy hanging nodes
             hangingNodes.clear();
