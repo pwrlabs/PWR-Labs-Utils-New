@@ -2,6 +2,7 @@ package io.pwrlabs.database.rocksdb;
 
 import io.pwrlabs.hashing.PWRHash;
 import io.pwrlabs.util.encoders.ByteArrayWrapper;
+import io.pwrlabs.util.encoders.Hex;
 import lombok.Getter;
 import lombok.SneakyThrows;
 import org.rocksdb.*;
@@ -528,13 +529,17 @@ public class MerkleTree {
             flushToDisk();
 
             // If current tree is empty, just use the source tree's structure
-            if (this.rootHash == null) {
+            if (this.rootHash == null || depth < 3) {
                 copyEntireTree(sourceTree);
                 return; // At least one node updated (the root)
             }
 
             // Compare trees and update nodes where needed
             compareAndUpdateNodes(this.rootHash, sourceTree.rootHash, sourceTree);
+
+            //Copy metadata
+            this.numLeaves = sourceTree.numLeaves;
+            this.depth = sourceTree.depth;
 
             //Copy hanging nodes
             hangingNodes.clear();
