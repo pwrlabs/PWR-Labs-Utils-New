@@ -307,6 +307,16 @@ public class MerkleTree {
 
         // 8. Register instance
         openTrees.put(treeName, this);
+
+        //Shutdown hook
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                    try {
+                        close();
+                    } catch (RocksDBException e) {
+                        e.printStackTrace();
+                    }
+                })
+        );
     }
 
     //endregion
@@ -454,7 +464,6 @@ public class MerkleTree {
 
                 nodesCache.clear();
             }
-
         } finally {
             lock.writeLock().unlock();
         }
@@ -482,16 +491,73 @@ public class MerkleTree {
     }
 
     /**
+     * Efficiently update this tree with nodes from another tree by recursively
+     * comparing subtrees and only updating where differences exist.
+     *
+     * @param sourceTree The source tree to update from
+     * @return Number of nodes updated
+     * @throws RocksDBException If there's an error accessing RocksDB
+     */
+    public void updateWithTree(MerkleTree sourceTree) throws RocksDBException {
+        if (sourceTree == null || sourceTree.getRootHash() == null) {
+            return;
+        }
+        lock.writeLock().lock();
+        try {
+            flushToDisk();
+
+            // If current tree is empty, just use the source tree's structure
+            if (this.rootHash == null) {
+                copyEntireTree(sourceTree);
+                return; // At least one node updated (the root)
+            }
+
+            // Compare trees and update nodes where needed
+            compareAndUpdateNodes(this.rootHash, sourceTree.rootHash, sourceTree);
+
+            //Copy hanging nodes
+            hangingNodes.clear();
+            for (Map.Entry<Integer, Node> entry : sourceTree.hangingNodes.entrySet()) {
+                Integer level = entry.getKey();
+                byte[] nodeHash = entry.getValue().hash;
+
+                Node node = getNodeByHash(nodeHash);
+                hangingNodes.put(level, node);
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
      * Close the databases (optional, if you need cleanup).
      */
     public void close() throws RocksDBException {
         lock.writeLock().lock();
         try {
-            // close logic, if your PwrRocksDB has any close method
             flushToDisk();
-            metaDataHandle.close();
-            nodesHandle.close();
-            db.close();
+
+            if (metaDataHandle != null) {
+                try {
+                    metaDataHandle.close();
+                } catch (Exception e) {
+                    // Log error
+                }
+            }
+            if (nodesHandle != null) {
+                try {
+                    nodesHandle.close();
+                } catch (Exception e) {
+                    // Log error
+                }
+            }
+            if (db != null) {
+                try {
+                    db.close();
+                } catch (Exception e) {
+                    // Log error
+                }
+            }
             openTrees.remove(treeName);
         } finally {
             lock.writeLock().unlock();
@@ -551,8 +617,10 @@ public class MerkleTree {
                     nodesCache.put(baw, node);
                 } catch (Exception e) {
                     e.printStackTrace();
+                    throw e;
                 }
             }
+
             return node;
         } finally {
             lock.readLock().unlock();
@@ -582,6 +650,138 @@ public class MerkleTree {
 
         return new Node(hash, left, right, parent);
     }
+
+    /**
+     * Recursively compare nodes from both trees and update as needed.
+     */
+    private void compareAndUpdateNodes(byte[] currentNodeHash, byte[] sourceNodeHash,
+                                       MerkleTree sourceTree) throws RocksDBException {
+        // If hashes are equal, subtrees are identical - no update needed
+        if (Arrays.equals(currentNodeHash, sourceNodeHash)) {
+            return;
+        }
+
+        // Get nodes from both trees
+        Node currentNode = getNodeByHash(currentNodeHash);
+        Node sourceNode = sourceTree.getNodeByHash(sourceNodeHash);
+
+        if (currentNode == null || sourceNode == null) {
+            return;
+        }
+
+        // If it's a leaf node, update it
+        if (sourceNode.left == null && sourceNode.right == null) {
+            // Found a different leaf - update it
+            if (currentNode.left == null && currentNode.right == null) {
+                currentNode.updateNodeHash(sourceNode.hash);
+            }
+            return;
+        }
+
+        // Compare and update left children if they exist
+        if (sourceNode.left != null) {
+            if (currentNode.left != null) {
+                compareAndUpdateNodes(currentNode.left, sourceNode.left, sourceTree);
+            } else {
+                // Current node doesn't have a left child, but source does
+                Node leftNode = sourceTree.getNodeByHash(sourceNode.left);
+                if (leftNode != null) {
+                    // Need to copy this subtree
+                    Node newNode = copySubtree(leftNode, sourceTree);
+                    currentNode.addLeaf(newNode.hash);
+                }
+            }
+        }
+
+        // Compare and update right children if they exist
+        if (sourceNode.right != null) {
+            if (currentNode.right != null) {
+                compareAndUpdateNodes(currentNode.right, sourceNode.right, sourceTree);
+            } else {
+                // Current node doesn't have a right child, but source does
+                Node rightNode = sourceTree.getNodeByHash(sourceNode.right);
+                if (rightNode != null) {
+                    // Need to copy this subtree
+                    Node newNode = copySubtree(rightNode, sourceTree);
+                    currentNode.addLeaf(newNode.hash);
+                }
+            }
+        }
+    }
+
+    /**
+     * Copy an entire subtree from the source tree.
+     */
+    private Node copySubtree(Node sourceNode, MerkleTree sourceTree) throws RocksDBException {
+        if (sourceNode == null) {
+            return null;
+        }
+
+        // Check if this node already exists in our tree
+        Node existingNode = getNodeByHash(sourceNode.hash);
+        if (existingNode != null) {
+            return existingNode;
+        }
+
+        // Create a new node
+        Node newNode;
+
+        // If it's a leaf, just copy the hash
+        if (sourceNode.left == null && sourceNode.right == null) {
+            newNode = new Node(sourceNode.hash);
+        } else {
+            // Otherwise recursively copy children
+            byte[] leftHash = null;
+            byte[] rightHash = null;
+
+            if (sourceNode.left != null) {
+                Node sourceLeft = sourceTree.getNodeByHash(sourceNode.left);
+                Node newLeft = copySubtree(sourceLeft, sourceTree);
+                if (newLeft != null) {
+                    leftHash = newLeft.hash;
+                }
+            }
+
+            if (sourceNode.right != null) {
+                Node sourceRight = sourceTree.getNodeByHash(sourceNode.right);
+                Node newRight = copySubtree(sourceRight, sourceTree);
+                if (newRight != null) {
+                    rightHash = newRight.hash;
+                }
+            }
+
+            // Create new internal node
+            newNode = new Node(leftHash, rightHash);
+        }
+
+        return newNode;
+    }
+
+    /**
+     * Copy the entire structure of the source tree when this tree is empty.
+     */
+    private void copyEntireTree(MerkleTree sourceTree) throws RocksDBException {
+        if (sourceTree.getRootHash() == null) {
+            return;
+        }
+
+        // Recursively copy starting from the root
+        Node sourceRoot = sourceTree.getNodeByHash(sourceTree.getRootHash());
+        if (sourceRoot != null) {
+            copySubtree(sourceRoot, sourceTree);
+            this.rootHash = sourceTree.getRootHash();
+            this.depth = sourceTree.getDepth();
+            this.numLeaves = sourceTree.getNumLeaves();
+
+            // Update hanging nodes
+            for (Map.Entry<Integer, Node> entry : sourceTree.hangingNodes.entrySet()) {
+                this.hangingNodes.put(entry.getKey(), getNodeByHash(entry.getValue().hash));
+            }
+
+            flushToDisk();
+        }
+    }
+
     //endregion
 
     //region ===================== Nested Classes =====================
@@ -785,6 +985,9 @@ public class MerkleTree {
         public void addLeaf(byte[] leafHash) throws RocksDBException {
             lock.writeLock().lock();
             try {
+                Node leafNode = getNodeByHash(leafHash);
+                if(leafNode == null) throw new IllegalArgumentException("Leaf node not found");
+
                 if (left == null) {
                     left = leafHash;
                 } else if (right == null) {

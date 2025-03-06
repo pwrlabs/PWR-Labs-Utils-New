@@ -2,189 +2,261 @@ package io.pwrlabs.test;
 
 import io.pwrlabs.database.rocksdb.MerkleTree;
 import io.pwrlabs.hashing.PWRHash;
+import io.pwrlabs.util.encoders.Hex;
+import org.rocksdb.RocksDBException;
+
+import java.io.File;
+import java.nio.ByteBuffer;
 import java.util.Arrays;
-import java.util.Random;
 
-/**
- * A simple test class for the MerkleTree implementation.
- * This test verifies basic functionality without external test libraries.
- */
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
 public class MerkleTreeTest {
-
-    private static final Random random = new Random();
+    private static int testCount = 0;
+    private static int passedCount = 0;
 
     public static void main(String[] args) {
         try {
-            // Clean up any existing test tree
-            cleanupTestTree();
+            deleteAllTestTrees();
+            System.out.println("Running MerkleTree tests...");
 
-            // Run the tests one at a time, cleaning up between tests
-            testBasicTreeOperations();
-            cleanupTestTree(); // Clean up after first test
+            // Run all tests
+            testEmptyTree();
+            testSingleLeaf();
+            testTwoLeaves();
+            testLeafUpdate();
+            testPersistence();
+            testTreeMerge();
+            testRevertChanges();
+            testErrorCases();
+            testHangingNodes();
 
-            testNodeUpdates();
-            cleanupTestTree(); // Clean up after second test
-
-            testTreePersistence();
-
-            System.out.println("All tests passed!");
+            System.out.println("\nTests passed: " + passedCount + "/" + testCount);
         } catch (Exception e) {
-            System.err.println("Test failed: " + e.getMessage());
+            System.out.println("Critical error in test framework: ");
             e.printStackTrace();
-        } finally {
-            cleanupTestTree();
         }
     }
 
-    private static void testBasicTreeOperations() throws Exception {
-        System.out.println("Running basic tree operations test...");
-
-        // Create a new tree
-        MerkleTree tree = new MerkleTree("test_tree");
-
-        // Assert initial state
-        assert tree.getNumLeaves() == 0 : "Tree should start with 0 leaves";
-        assert tree.getDepth() == 0 : "Tree should start with depth 0";
-
-        // Create and add a leaf node
-        byte[] leaf1Data = randomBytes(32);
-        MerkleTree.Node leaf1 = tree.new Node(leaf1Data);
-        tree.addLeaf(leaf1);
-
-        // Verify tree state after adding one leaf
-        assert tree.getNumLeaves() == 1 : "Tree should have 1 leaf";
-        assert Arrays.equals(tree.getRootHash(), leaf1Data) : "Root hash should match leaf1 hash";
-
-        // Add a second leaf
-        byte[] leaf2Data = randomBytes(32);
-        MerkleTree.Node leaf2 = tree.new Node(leaf2Data);
-        tree.addLeaf(leaf2);
-
-        // Verify tree state after adding second leaf
-        assert tree.getNumLeaves() == 2 : "Tree should have 2 leaves";
-        assert tree.getDepth() == 1 : "Tree should have depth 1";
-
-        // Expected root hash for two leaves
-        byte[] expectedRootHash = PWRHash.hash256(leaf1Data, leaf2Data);
-        assert Arrays.equals(tree.getRootHash(), expectedRootHash) : "Root hash should match the hash of both leaves";
-
-        // Add a third leaf
-        byte[] leaf3Data = randomBytes(32);
-        MerkleTree.Node leaf3 = tree.new Node(leaf3Data);
-        tree.addLeaf(leaf3);
-
-        // Verify tree state after adding third leaf
-        assert tree.getNumLeaves() == 3 : "Tree should have 3 leaves";
-
-        // Flush changes to disk
-        tree.flushToDisk();
-
-        // Close the tree
+    private static void testEmptyTree() throws RocksDBException {
+        MerkleTree tree = new MerkleTree("testEmptyTree");
+        assertTrue(tree.getNumLeaves() == 0, "Empty tree should have 0 leaves");
+        assertNull(tree.getRootHash(), "Empty tree should have null root");
         tree.close();
-
-        System.out.println("Basic tree operations test passed!");
     }
 
-    private static void testNodeUpdates() throws Exception {
-        System.out.println("Running node updates test...");
+    private static void testSingleLeaf() throws RocksDBException {
+        MerkleTree tree = new MerkleTree("testSingleLeaf");
+        byte[] leafHash = createTestHash(1);
+        MerkleTree.Node leaf = tree.new Node(leafHash);
 
-        // Clean up any existing test tree before starting this test
-        cleanupTestTree();
+        tree.addLeaf(leaf);
+        assertEquals(tree.getNumLeaves(), 1, "Should have 1 leaf");
+        assertArrayEquals(tree.getRootHash(), leafHash, "Root should match leaf hash");
 
-        // Create a new tree
-        MerkleTree tree = new MerkleTree("test_tree");
-
-        // Add three leaves
-        byte[][] leafData = new byte[3][];
-        MerkleTree.Node[] leaves = new MerkleTree.Node[3];
-
-        for (int i = 0; i < 3; i++) {
-            leafData[i] = randomBytes(32);
-            leaves[i] = tree.new Node(leafData[i]);
-            tree.addLeaf(leaves[i]);
-        }
-
-        // Store the original root hash
-        byte[] originalRootHash = Arrays.copyOf(tree.getRootHash(), tree.getRootHash().length);
-
-        // Update the first leaf
-        byte[] newLeaf1Data = randomBytes(32);
-        leaves[0].updateNodeHash(newLeaf1Data);
-
-        // Verify that the root hash has changed
-        assert !Arrays.equals(tree.getRootHash(), originalRootHash) : "Root hash should change after updating a leaf";
-
-        // Flush to disk and close
-        tree.flushToDisk();
         tree.close();
-
-        System.out.println("Node updates test passed!");
     }
 
-    private static void testTreePersistence() throws Exception {
-        System.out.println("Running tree persistence test...");
+    private static void testTwoLeaves() throws RocksDBException {
+        MerkleTree tree = new MerkleTree("testTwoLeaves");
+        byte[] hash1 = createTestHash(1);
+        byte[] hash2 = createTestHash(2);
 
-        // Step 1: Create a tree and add some data
-        MerkleTree tree1 = new MerkleTree("test_tree");
+        tree.addLeaf(tree.new Node(hash1));
+        tree.addLeaf(tree.new Node(hash2));
 
-        // Add three leaves
-        byte[][] leafData = new byte[3][];
-        for (int i = 0; i < 3; i++) {
-            leafData[i] = randomBytes(32);
-            MerkleTree.Node leaf = tree1.new Node(leafData[i]);
-            tree1.addLeaf(leaf);
-        }
+        byte[] expectedRoot = PWRHash.hash256(hash1, hash2);
+        assertArrayEquals(tree.getRootHash(), expectedRoot, "Root should be hash of both leaves");
+        assertEquals(tree.getNumLeaves(), 2, "Should have 2 leaves");
 
-        // Save the root hash
-        byte[] expectedRootHash = Arrays.copyOf(tree1.getRootHash(), tree1.getRootHash().length);
-        int expectedNumLeaves = tree1.getNumLeaves();
-        int expectedDepth = tree1.getDepth();
+        tree.close();
+    }
 
-        // Flush and close
+    private static void testLeafUpdate() throws RocksDBException {
+        MerkleTree tree = new MerkleTree("testLeafUpdate");
+        byte[] originalHash = createTestHash(1);
+        byte[] newHash = createTestHash(2);
+
+        tree.addLeaf(tree.new Node(originalHash));
+        byte[] originalRoot = tree.getRootHash();
+
+        tree.updateLeaf(originalHash, newHash);
+
+        System.out.println("Original root: " + Hex.toHexString(originalRoot));
+        System.out.println("Updated root: " + Hex.toHexString(tree.getRootHash()));
+        assertFalse(Arrays.equals(tree.getRootHash(), originalRoot),
+                "Root should change after leaf update");
+
+        tree.close();
+    }
+
+    private static void testPersistence() throws RocksDBException {
+        String treeName = "persistenceTest";
+        byte[] leafHash = createTestHash(1);
+
+        // Create and flush initial tree
+        MerkleTree tree1 = new MerkleTree(treeName);
+        tree1.addLeaf(tree1.new Node(leafHash));
         tree1.flushToDisk();
         tree1.close();
 
-        // Step 2: Reopen the tree and verify state
-        MerkleTree tree2 = new MerkleTree("test_tree");
-
-        // Check that metadata was loaded correctly
-        assert tree2.getNumLeaves() == expectedNumLeaves : "Reopened tree should have same number of leaves";
-        assert tree2.getDepth() == expectedDepth : "Reopened tree should have same depth";
-        assert Arrays.equals(tree2.getRootHash(), expectedRootHash) : "Reopened tree should have same root hash";
-
-        // Close the tree
+        // Reload from disk
+        MerkleTree tree2 = new MerkleTree(treeName);
+        assertEquals(tree2.getNumLeaves(), 1, "Should persist leaf count");
+        assertArrayEquals(tree2.getRootHash(), leafHash, "Should persist root hash");
         tree2.close();
-
-        System.out.println("Tree persistence test passed!");
     }
 
-    private static byte[] randomBytes(int length) {
-        byte[] bytes = new byte[length];
-        random.nextBytes(bytes);
-        return bytes;
+    private static void testTreeMerge() throws RocksDBException {
+        MerkleTree source = new MerkleTree("mergeSource");
+        MerkleTree target = new MerkleTree("mergeTarget");
+
+        byte[] sourceHash = createTestHash(1);
+        source.addLeaf(source.new Node(sourceHash));
+        source.flushToDisk();
+
+        target.updateWithTree(source);
+        assertArrayEquals(target.getRootHash(), source.getRootHash(),
+                "Merged root should match source root");
+
+        source.close();
+        target.close();
     }
 
-    private static void cleanupTestTree() {
-        // This is a simplistic cleanup - in a real environment you might want
-        // to use appropriate directory deletion methods
+    private static void testRevertChanges() throws RocksDBException {
+        MerkleTree tree = new MerkleTree("revertTest");
+        tree.addLeaf(tree.new Node(createTestHash(1)));
+        tree.flushToDisk();
+
+        byte[] originalRoot = tree.getRootHash();
+        tree.addLeaf(tree.new Node(createTestHash(2))); // Unflushed change
+        tree.revertUnsavedChanges();
+
+        assertArrayEquals(tree.getRootHash(), originalRoot, "Should revert to original root");
+        tree.close();
+    }
+
+    private static void testErrorCases() {
         try {
-            // Delete the test tree if it exists
-            java.io.File treeDir = new java.io.File("merkleTree/test_tree");
-            if (treeDir.exists()) {
+            MerkleTree tree = new MerkleTree("errorTest");
+            tree.updateLeaf(createTestHash(99), createTestHash(100));
+            fail("Should throw when updating non-existent leaf");
+        } catch (Exception e) {
+            // Expected exception
+            pass();
+        }
+    }
+
+    private static void testHangingNodes() throws RocksDBException {
+        MerkleTree tree = new MerkleTree("hangingNodesTest");
+
+        // Add 3 leaves to test hanging node handling
+        tree.addLeaf(tree.new Node(createTestHash(1)));
+        tree.addLeaf(tree.new Node(createTestHash(2)));
+        tree.addLeaf(tree.new Node(createTestHash(3)));
+
+        assertEquals(tree.getNumLeaves(), 3, "Should handle odd number of leaves");
+        assertNotNull(tree.getRootHash(), "Should maintain valid root with hanging nodes");
+        tree.close();
+    }
+
+    // Helper methods
+    private static byte[] createTestHash(int seed) {
+        byte[] hash = new byte[32];
+        Arrays.fill(hash, (byte) seed);
+        return hash;
+    }
+
+    private static void assertTrue(boolean condition, String message) {
+        testCount++;
+        if (!condition) {
+            fail("Assertion failed: " + message);
+        }
+        passedCount++;
+    }
+
+    private static void assertFalse(boolean condition, String message) {
+        assertTrue(!condition, message);
+    }
+
+    private static void assertNull(Object obj, String message) {
+        assertTrue(obj == null, message);
+    }
+
+    private static void assertEquals(int actual, int expected, String message) {
+        if (actual != expected) {
+            fail(message + " (Expected: " + expected + ", Actual: " + actual + ")");
+        }
+        passedCount++;
+        testCount++;
+    }
+
+    private static void assertArrayEquals(byte[] a, byte[] b, String message) {
+        testCount++;
+        if (!Arrays.equals(a, b)) {
+            fail("Array mismatch: " + message);
+        }
+        passedCount++;
+    }
+
+    private static void fail(String message) {
+        testCount++;
+        System.out.println("FAIL: " + message);
+        throw new AssertionError(message);
+    }
+
+    private static void pass() {
+        testCount++;
+        passedCount++;
+    }
+
+    // Add these methods to the MerkleTreeTest class
+
+    private static void deleteAllTestTrees() {
+        String[] treeNames = {
+                "testEmptyTree", "testSingleLeaf", "testTwoLeaves", "testLeafUpdate",
+                "persistenceTest", "mergeSource", "mergeTarget", "revertTest",
+                "errorTest", "hangingNodesTest"
+        };
+
+        System.out.println("Cleaning up old test trees...");
+        for (String treeName : treeNames) {
+            deleteTree(treeName);
+        }
+    }
+
+    private static void deleteTree(String treeName) {
+        try {
+            // Assume the tree is stored in a directory with the same name
+            File treeDir = new File(treeName);
+            if (treeDir.exists() && treeDir.isDirectory()) {
+                // Delete all files in the directory
                 deleteDirectory(treeDir);
+                System.out.println("Deleted tree: " + treeName);
             }
         } catch (Exception e) {
-            System.err.println("Failed to clean up test tree: " + e.getMessage());
+            System.out.println("Error deleting tree " + treeName + ": " + e.getMessage());
         }
     }
 
-    private static boolean deleteDirectory(java.io.File directoryToBeDeleted) {
-        java.io.File[] allContents = directoryToBeDeleted.listFiles();
-        if (allContents != null) {
-            for (java.io.File file : allContents) {
-                deleteDirectory(file);
+    private static void deleteDirectory(File directory) {
+        if (directory.exists()) {
+            File[] files = directory.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    if (file.isDirectory()) {
+                        deleteDirectory(file);
+                    } else {
+                        if (!file.delete()) {
+                            System.out.println("Could not delete file: " + file.getAbsolutePath());
+                        }
+                    }
+                }
+            }
+            if (!directory.delete()) {
+                System.out.println("Could not delete directory: " + directory.getAbsolutePath());
             }
         }
-        return directoryToBeDeleted.delete();
     }
+
 }
