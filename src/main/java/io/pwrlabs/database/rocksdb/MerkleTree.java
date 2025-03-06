@@ -65,6 +65,8 @@ public class MerkleTree {
     @Getter
     private int depth = 0;
     private byte[] rootHash = null;
+
+    private boolean closed = false;
     //endregion
 
     //region ===================== Constructors =====================
@@ -540,6 +542,7 @@ public class MerkleTree {
             //Copy metadata
             this.numLeaves = sourceTree.numLeaves;
             this.depth = sourceTree.depth;
+            this.rootHash = sourceTree.getRootHash(); // Ensure root hash matches source tree
 
             //Copy hanging nodes
             hangingNodes.clear();
@@ -548,7 +551,20 @@ public class MerkleTree {
                 byte[] nodeHash = entry.getValue().hash;
 
                 Node node = getNodeByHash(nodeHash);
-                hangingNodes.put(level, node);
+                if (node != null) {
+                    hangingNodes.put(level, node);
+                } else {
+                    // If node doesn't exist in target tree, create it
+                    Node sourceNode = entry.getValue();
+                    try {
+                        node = copySubtree(sourceNode, sourceTree);
+                        if (node != null) {
+                            hangingNodes.put(level, node);
+                        }
+                    } catch (RocksDBException e) {
+                        throw new RuntimeException("Error copying hanging node: " + e.getMessage(), e);
+                    }
+                }
             }
         } finally {
             lock.writeLock().unlock();
@@ -561,6 +577,7 @@ public class MerkleTree {
     public void close() throws RocksDBException {
         lock.writeLock().lock();
         try {
+            if(closed) return;
             flushToDisk();
 
             if (metaDataHandle != null) {
@@ -570,6 +587,7 @@ public class MerkleTree {
                     // Log error
                 }
             }
+
             if (nodesHandle != null) {
                 try {
                     nodesHandle.close();
@@ -577,6 +595,7 @@ public class MerkleTree {
                     // Log error
                 }
             }
+
             if (db != null) {
                 try {
                     db.close();
@@ -584,7 +603,9 @@ public class MerkleTree {
                     // Log error
                 }
             }
+
             openTrees.remove(treeName);
+            closed = true;
         } finally {
             lock.writeLock().unlock();
         }
