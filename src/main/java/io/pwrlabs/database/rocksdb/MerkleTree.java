@@ -326,6 +326,13 @@ public class MerkleTree {
      * Add a new leaf node to the Merkle Tree.
      */
     public void addLeaf(Node leafNode) throws RocksDBException {
+        if (leafNode == null) {
+            throw new IllegalArgumentException("Leaf node cannot be null");
+        }
+        if (leafNode.hash == null) {
+            throw new IllegalArgumentException("Leaf node hash cannot be null");
+        }
+        
         lock.writeLock().lock();
         try {
             if (numLeaves == 0) {
@@ -350,6 +357,9 @@ public class MerkleTree {
                         addNode(1, parentNode);
                     } else {
                         Node parentNodeOfHangingLeaf = getNodeByHash(hangingLeaf.parent);
+                        if (parentNodeOfHangingLeaf == null) {
+                            throw new IllegalStateException("Parent node of hanging leaf not found");
+                        }
                         parentNodeOfHangingLeaf.addLeaf(leafNode.hash);
                     }
                     hangingNodes.remove(0);
@@ -363,6 +373,10 @@ public class MerkleTree {
     }
 
     public void addLeafIfMissing(byte[] leafHash) {
+        if (leafHash == null) {
+            throw new IllegalArgumentException("Leaf hash cannot be null");
+        }
+        
         lock.writeLock().lock();
         try {
             if (getNodeByHash(leafHash) == null) {
@@ -376,17 +390,24 @@ public class MerkleTree {
     }
 
     public void updateLeaf(byte[] oldLeafHash, byte[] newLeafHash) {
+        if (oldLeafHash == null) {
+            throw new IllegalArgumentException("Old leaf hash cannot be null");
+        }
+        if (newLeafHash == null) {
+            throw new IllegalArgumentException("New leaf hash cannot be null");
+        }
+        
         lock.writeLock().lock();
         try {
             Node leaf = getNodeByHash(oldLeafHash);
 
             if(leaf == null) {
-                throw new RuntimeException("Leaf not found");
+                throw new IllegalArgumentException("Leaf not found: " + Hex.toHexString(oldLeafHash));
             } else {
                 leaf.updateNodeHash(newLeafHash);
             }
         } catch (RocksDBException e) {
-            throw new RuntimeException(e);
+            throw new RuntimeException("Error updating leaf: " + e.getMessage(), e);
         } finally {
             lock.writeLock().unlock();
         }
@@ -804,6 +825,9 @@ public class MerkleTree {
          * Construct a leaf node with a known hash.
          */
         public Node(byte[] hash) {
+            if (hash == null) {
+                throw new IllegalArgumentException("Node hash cannot be null");
+            }
             this.hash = hash;
 
             nodesCache.put(new ByteArrayWrapper(hash), this);
@@ -813,6 +837,9 @@ public class MerkleTree {
          * Construct a node with all fields.
          */
         public Node(byte[] hash, byte[] left, byte[] right, byte[] parent) {
+            if (hash == null) {
+                throw new IllegalArgumentException("Node hash cannot be null");
+            }
             this.hash = hash;
             this.left = left;
             this.right = right;
@@ -825,9 +852,18 @@ public class MerkleTree {
          * Construct a node (non-leaf) with leftHash and rightHash, auto-calculate node hash.
          */
         public Node(byte[] left, byte[] right) {
+            // At least one of left or right must be non-null
+            if (left == null && right == null) {
+                throw new IllegalArgumentException("At least one of left or right hash must be non-null");
+            }
+            
             this.left = left;
             this.right = right;
             this.hash = calculateHash();
+            
+            if (this.hash == null) {
+                throw new IllegalStateException("Failed to calculate node hash");
+            }
 
             nodesCache.put(new ByteArrayWrapper(hash), this);
         }
@@ -983,10 +1019,16 @@ public class MerkleTree {
          * Add a leaf to this node (either left or right).
          */
         public void addLeaf(byte[] leafHash) throws RocksDBException {
+            if (leafHash == null) {
+                throw new IllegalArgumentException("Leaf hash cannot be null");
+            }
+            
             lock.writeLock().lock();
             try {
                 Node leafNode = getNodeByHash(leafHash);
-                if(leafNode == null) throw new IllegalArgumentException("Leaf node not found");
+                if(leafNode == null) {
+                    throw new IllegalArgumentException("Leaf node not found: " + Hex.toHexString(leafHash));
+                }
 
                 if (left == null) {
                     left = leafHash;
@@ -997,6 +1039,9 @@ public class MerkleTree {
                 }
 
                 byte[] newHash = calculateHash();
+                if (newHash == null) {
+                    throw new IllegalStateException("Failed to calculate new hash after adding leaf");
+                }
                 updateNodeHash(newHash);
             } finally {
                 lock.writeLock().unlock();
