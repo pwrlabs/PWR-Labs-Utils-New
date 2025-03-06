@@ -65,6 +65,8 @@ public class MerkleTree {
     @Getter
     private int depth = 0;
     private byte[] rootHash = null;
+
+    private boolean closed = false;
     //endregion
 
     //region ===================== Constructors =====================
@@ -575,6 +577,7 @@ public class MerkleTree {
     public void close() throws RocksDBException {
         lock.writeLock().lock();
         try {
+            if(closed) return;
             flushToDisk();
 
             if (metaDataHandle != null) {
@@ -584,6 +587,7 @@ public class MerkleTree {
                     // Log error
                 }
             }
+
             if (nodesHandle != null) {
                 try {
                     nodesHandle.close();
@@ -591,6 +595,7 @@ public class MerkleTree {
                     // Log error
                 }
             }
+
             if (db != null) {
                 try {
                     db.close();
@@ -598,7 +603,9 @@ public class MerkleTree {
                     // Log error
                 }
             }
+
             openTrees.remove(treeName);
+            closed = true;
         } finally {
             lock.writeLock().unlock();
         }
