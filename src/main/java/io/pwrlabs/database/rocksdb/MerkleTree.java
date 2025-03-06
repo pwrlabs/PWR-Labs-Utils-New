@@ -548,7 +548,20 @@ public class MerkleTree {
                 byte[] nodeHash = entry.getValue().hash;
 
                 Node node = getNodeByHash(nodeHash);
-                hangingNodes.put(level, node);
+                if (node != null) {
+                    hangingNodes.put(level, node);
+                } else {
+                    // If node doesn't exist in target tree, create it
+                    Node sourceNode = entry.getValue();
+                    try {
+                        node = copySubtree(sourceNode, sourceTree);
+                        if (node != null) {
+                            hangingNodes.put(level, node);
+                        }
+                    } catch (RocksDBException e) {
+                        throw new RuntimeException("Error copying hanging node: " + e.getMessage(), e);
+                    }
+                }
             }
         } finally {
             lock.writeLock().unlock();
