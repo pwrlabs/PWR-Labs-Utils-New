@@ -950,16 +950,36 @@ public class MerkleTree {
                 boolean isLeaf = (left == null && right == null);
                 boolean isRoot = (parent == null);
 
-                if (isLeaf) {
-                    // Leaf => update parent's reference & recalc parent's hash
+                // If this is the root node, update the root hash
+                if (isRoot) {
+                    rootHash = newHash;
+                    
+                    if(left != null) {
+                        Node leftNode = getNodeByHash(left);
+                        if (leftNode != null) {
+                            leftNode.setParentNodeHash(newHash);
+                        }
+                    }
+
+                    if(right != null) {
+                        Node rightNode = getNodeByHash(right);
+                        if (rightNode != null) {
+                            rightNode.setParentNodeHash(newHash);
+                        }
+                    }
+                }
+
+                // If this is a leaf node with a parent, update the parent
+                if (isLeaf && !isRoot) {
                     Node parentNode = getNodeByHash(parent);
                     if (parentNode != null) {
                         parentNode.updateLeaf(oldHash, newHash);
                         byte[] newParentHash = parentNode.calculateHash();
                         parentNode.updateNodeHash(newParentHash);
                     }
-                } else if (!isRoot) {
-                    // Internal node => update children’s parent references, update parent's reference
+                } 
+                // If this is an internal node with a parent, update the parent and children
+                else if (!isLeaf && !isRoot) {
                     if (left != null) {
                         Node leftNode = getNodeByHash(left);
                         if (leftNode != null) {
@@ -978,18 +998,6 @@ public class MerkleTree {
                         parentNode.updateLeaf(oldHash, newHash);
                         byte[] newParentHash = parentNode.calculateHash();
                         parentNode.updateNodeHash(newParentHash);
-                    }
-                } else {
-                    rootHash = newHash;
-
-                    if(left != null) {
-                        Node leftNode = getNodeByHash(left);
-                        leftNode.setParentNodeHash(newHash);
-                    }
-
-                    if(right != null) {
-                        Node rightNode = getNodeByHash(right);
-                        rightNode.setParentNodeHash(newHash);
                     }
                 }
             } finally {
