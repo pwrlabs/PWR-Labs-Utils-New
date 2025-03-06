@@ -30,6 +30,14 @@ public class MerkleTreeTest {
             testRevertChanges();
             testErrorCases();
             testHangingNodes();
+            
+            // New tests
+            testAddLeafIfMissing();
+            testAddNode();
+            testFlushToDisk();
+            testComplexTreeMerge();
+            testEdgeCases();
+            testConcurrentOperations();
 
             System.out.println("\nTests passed: " + passedCount + "/" + testCount);
         } catch (Exception e) {
@@ -160,6 +168,175 @@ public class MerkleTreeTest {
         tree.close();
     }
 
+    private static void testAddLeafIfMissing() throws RocksDBException {
+        MerkleTree tree = new MerkleTree("testAddLeafIfMissing");
+        byte[] leafHash = createTestHash(1);
+        
+        // Add leaf if missing (should add)
+        tree.addLeafIfMissing(leafHash);
+        assertEquals(tree.getNumLeaves(), 1, "Should have 1 leaf after adding missing leaf");
+        assertArrayEquals(tree.getRootHash(), leafHash, "Root should match leaf hash");
+        
+        // Add same leaf again (should not add)
+        tree.addLeafIfMissing(leafHash);
+        assertEquals(tree.getNumLeaves(), 1, "Should still have 1 leaf after adding same leaf again");
+        
+        // Add different leaf
+        byte[] leafHash2 = createTestHash(2);
+        tree.addLeafIfMissing(leafHash2);
+        assertEquals(tree.getNumLeaves(), 2, "Should have 2 leaves after adding different leaf");
+        
+        tree.close();
+    }
+
+    private static void testAddNode() throws RocksDBException {
+        MerkleTree tree = new MerkleTree("testAddNode");
+        byte[] leafHash1 = createTestHash(1);
+        byte[] leafHash2 = createTestHash(2);
+        
+        MerkleTree.Node leaf1 = tree.new Node(leafHash1);
+        MerkleTree.Node leaf2 = tree.new Node(leafHash2);
+        
+        // Add node at level 0
+        tree.addNode(0, leaf1);
+        assertEquals(tree.getNumLeaves(), 0, "Adding node should not increase leaf count");
+        assertArrayEquals(tree.getRootHash(), leafHash1, "Root should match node hash");
+        
+        // Add another node at level 0
+        tree.addNode(0, leaf2);
+        byte[] expectedRoot = PWRHash.hash256(leafHash1, leafHash2);
+        assertArrayEquals(tree.getRootHash(), expectedRoot, "Root should be hash of both nodes");
+        
+        tree.close();
+    }
+
+    private static void testFlushToDisk() throws RocksDBException {
+        String treeName = "testFlushToDisk";
+        MerkleTree tree1 = new MerkleTree(treeName);
+        byte[] leafHash = createTestHash(1);
+        
+        // Add leaf but don't flush
+        tree1.addLeaf(tree1.new Node(leafHash));
+        tree1.close();
+        
+        // Reopen tree and check if changes were saved (they should be, as close() calls flushToDisk())
+        MerkleTree tree2 = new MerkleTree(treeName);
+        assertEquals(tree2.getNumLeaves(), 1, "Changes should be saved after close");
+        
+        // Add another leaf and explicitly flush
+        byte[] leafHash2 = createTestHash(2);
+        tree2.addLeaf(tree2.new Node(leafHash2));
+        tree2.flushToDisk();
+        tree2.close();
+        
+        // Reopen and verify both leaves are there
+        MerkleTree tree3 = new MerkleTree(treeName);
+        assertEquals(tree3.getNumLeaves(), 2, "Both leaves should be saved");
+        tree3.close();
+    }
+
+    private static void testComplexTreeMerge() throws RocksDBException {
+        MerkleTree source = new MerkleTree("complexMergeSource");
+        MerkleTree target = new MerkleTree("complexMergeTarget");
+        
+        // Create a source tree with multiple leaves
+        for (int i = 1; i <= 5; i++) {
+            source.addLeaf(source.new Node(createTestHash(i)));
+        }
+        source.flushToDisk();
+        
+        // Create a target tree with some different leaves
+        for (int i = 3; i <= 7; i++) {
+            target.addLeaf(target.new Node(createTestHash(i)));
+        }
+        target.flushToDisk();
+        
+        // Save target root before merge
+        byte[] targetRootBeforeMerge = target.getRootHash();
+        
+        // Merge source into target
+        target.updateWithTree(source);
+        
+        // Verify target has been updated
+        assertFalse(Arrays.equals(target.getRootHash(), targetRootBeforeMerge),
+                "Target root should change after merge");
+        
+        source.close();
+        target.close();
+    }
+
+    private static void testEdgeCases() throws RocksDBException {
+        MerkleTree tree = new MerkleTree("testEdgeCases");
+        
+        // Test with null leaf hash
+        try {
+            tree.addLeafIfMissing(null);
+            fail("Should throw exception when adding null leaf hash");
+        } catch (Exception e) {
+            // Expected exception
+            pass();
+        }
+        
+        // Test updating non-existent leaf
+        try {
+            tree.updateLeaf(createTestHash(99), createTestHash(100));
+            fail("Should throw when updating non-existent leaf");
+        } catch (Exception e) {
+            // Expected exception
+            pass();
+        }
+        
+        // Test adding leaf with null hash
+        try {
+            MerkleTree.Node nullNode = tree.new Node(null);
+            tree.addLeaf(nullNode);
+            fail("Should throw when adding leaf with null hash");
+        } catch (Exception e) {
+            // Expected exception
+            pass();
+        }
+        
+        tree.close();
+    }
+
+    private static void testConcurrentOperations() throws Exception {
+        final MerkleTree tree = new MerkleTree("testConcurrent");
+        final int numThreads = 5;
+        final int operationsPerThread = 10;
+        
+        Thread[] threads = new Thread[numThreads];
+        for (int t = 0; t < numThreads; t++) {
+            final int threadId = t;
+            threads[t] = new Thread(() -> {
+                try {
+                    for (int i = 0; i < operationsPerThread; i++) {
+                        byte[] hash = createTestHash(threadId * 100 + i);
+                        tree.addLeafIfMissing(hash);
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    fail("Exception in thread " + threadId + ": " + e.getMessage());
+                }
+            });
+        }
+        
+        // Start all threads
+        for (Thread thread : threads) {
+            thread.start();
+        }
+        
+        // Wait for all threads to complete
+        for (Thread thread : threads) {
+            thread.join();
+        }
+        
+        // Verify the tree has the expected number of leaves
+        assertEquals(tree.getNumLeaves(), numThreads * operationsPerThread, 
+                "Tree should have all leaves from all threads");
+        
+        tree.close();
+    }
+
     // Helper methods
     private static byte[] createTestHash(int seed) {
         byte[] hash = new byte[32];
@@ -216,7 +393,9 @@ public class MerkleTreeTest {
         String[] treeNames = {
                 "testEmptyTree", "testSingleLeaf", "testTwoLeaves", "testLeafUpdate",
                 "persistenceTest", "mergeSource", "mergeTarget", "revertTest",
-                "errorTest", "hangingNodesTest"
+                "errorTest", "hangingNodesTest", "testAddLeafIfMissing", "testAddNode",
+                "testFlushToDisk", "complexMergeSource", "complexMergeTarget", 
+                "testEdgeCases", "testConcurrent"
         };
 
         System.out.println("Cleaning up old test trees...");
@@ -227,8 +406,8 @@ public class MerkleTreeTest {
 
     private static void deleteTree(String treeName) {
         try {
-            // Assume the tree is stored in a directory with the same name
-            File treeDir = new File(treeName);
+            // Tree is stored in merkleTree/treeName directory
+            File treeDir = new File("merkleTree/" + treeName);
             if (treeDir.exists() && treeDir.isDirectory()) {
                 // Delete all files in the directory
                 deleteDirectory(treeDir);
