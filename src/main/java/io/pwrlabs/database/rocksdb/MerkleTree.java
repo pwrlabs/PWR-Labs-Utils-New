@@ -624,7 +624,7 @@ public class MerkleTree {
             try (WriteBatch batch = new WriteBatch()) {
                 for (ByteArrayWrapper oldHash : oldNodeHashes) {
                     if (!currentNodeHashes.contains(oldHash)) {
-                        batch.delete(nodesHandle, oldHash.getData());
+                        batch.delete(nodesHandle, oldHash.data());
                     }
                 }
                 
