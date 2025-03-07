@@ -180,7 +180,7 @@ public class MerkleTree {
 //
 //        List<ColumnFamilyDescriptor> cfDescriptors = new ArrayList<>();
 //        if (existingCFNames.isEmpty()) {
-//            // Means this is a brand new DB – no column families yet
+//            // Means this is a brand new DB -- no column families yet
 //            // We always need the default CF
 //            cfDescriptors.add(new ColumnFamilyDescriptor(
 //                    RocksDB.DEFAULT_COLUMN_FAMILY,
@@ -498,6 +498,40 @@ public class MerkleTree {
      */
     public byte[] getRootHash() {
         return rootHash;
+    }
+    
+    /**
+     * Get all nodes saved on disk.
+     * @return A list of all nodes in the tree
+     * @throws RocksDBException If there's an error accessing RocksDB
+     */
+    public List<Node> getAllNodes() throws RocksDBException {
+        lock.readLock().lock();
+        try {
+            List<Node> allNodes = new ArrayList<>();
+            
+            // First flush any pending changes to disk
+            flushToDisk();
+            
+            // Use RocksIterator to iterate through all nodes in the nodesHandle column family
+            try (RocksIterator iterator = db.newIterator(nodesHandle)) {
+                iterator.seekToFirst();
+                while (iterator.isValid()) {
+                    byte[] nodeHash = iterator.key();
+                    byte[] nodeData = iterator.value();
+                    
+                    // Decode the node from its binary representation
+                    Node node = decodeNode(nodeData);
+                    allNodes.add(node);
+                    
+                    iterator.next();
+                }
+            }
+            
+            return allNodes;
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     public void revertUnsavedChanges() {
