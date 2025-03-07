@@ -560,6 +560,16 @@ public class MerkleTree {
         try {
             flushToDisk();
 
+            // Store all current nodes before update to identify which ones to remove later
+            Set<ByteArrayWrapper> oldNodeHashes = new HashSet<>();
+            try (RocksIterator iterator = db.newIterator(nodesHandle)) {
+                iterator.seekToFirst();
+                while (iterator.isValid()) {
+                    oldNodeHashes.add(new ByteArrayWrapper(iterator.key()));
+                    iterator.next();
+                }
+            }
+
             // If current tree is empty, just use the source tree's structure
             if (this.rootHash == null || depth < 3) {
                 copyEntireTree(sourceTree);
@@ -593,6 +603,34 @@ public class MerkleTree {
                         }
                     } catch (RocksDBException e) {
                         throw new RuntimeException("Error copying hanging node: " + e.getMessage(), e);
+                    }
+                }
+            }
+
+            // Flush changes to disk to ensure all new nodes are written
+            flushToDisk();
+
+            // Get all current node hashes after update
+            Set<ByteArrayWrapper> currentNodeHashes = new HashSet<>();
+            try (RocksIterator iterator = db.newIterator(nodesHandle)) {
+                iterator.seekToFirst();
+                while (iterator.isValid()) {
+                    currentNodeHashes.add(new ByteArrayWrapper(iterator.key()));
+                    iterator.next();
+                }
+            }
+
+            // Create a batch to delete old nodes that are no longer needed
+            try (WriteBatch batch = new WriteBatch()) {
+                for (ByteArrayWrapper oldHash : oldNodeHashes) {
+                    if (!currentNodeHashes.contains(oldHash)) {
+                        batch.delete(nodesHandle, oldHash.getData());
+                    }
+                }
+                
+                if (batch.count() > 0) {
+                    try (WriteOptions writeOptions = new WriteOptions()) {
+                        db.write(writeOptions, batch);
                     }
                 }
             }
