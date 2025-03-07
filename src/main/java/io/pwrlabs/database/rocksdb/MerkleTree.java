@@ -9,10 +9,7 @@ import org.rocksdb.*;
 
 import java.io.File;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -180,7 +177,7 @@ public class MerkleTree {
 //
 //        List<ColumnFamilyDescriptor> cfDescriptors = new ArrayList<>();
 //        if (existingCFNames.isEmpty()) {
-//            // Means this is a brand new DB – no column families yet
+//            // Means this is a brand new DB -- no column families yet
 //            // We always need the default CF
 //            cfDescriptors.add(new ColumnFamilyDescriptor(
 //                    RocksDB.DEFAULT_COLUMN_FAMILY,
@@ -499,6 +496,39 @@ public class MerkleTree {
     public byte[] getRootHash() {
         return rootHash;
     }
+    
+    /**
+     * Get all nodes saved on disk.
+     * @return A list of all nodes in the tree
+     * @throws RocksDBException If there's an error accessing RocksDB
+     */
+    public HashSet<Node> getAllNodes() throws RocksDBException {
+        lock.writeLock().lock();
+        try {
+            HashSet<Node> allNodes = new HashSet<>();
+            
+            // First flush any pending changes to disk
+            flushToDisk();
+            
+            // Use RocksIterator to iterate through all nodes in the nodesHandle column family
+            try (RocksIterator iterator = db.newIterator(nodesHandle)) {
+                iterator.seekToFirst();
+                while (iterator.isValid()) {
+                    byte[] nodeData = iterator.value();
+                    
+                    // Decode the node from its binary representation
+                    Node node = decodeNode(nodeData);
+                    allNodes.add(node);
+                    
+                    iterator.next();
+                }
+            }
+            
+            return allNodes;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
 
     public void revertUnsavedChanges() {
         lock.writeLock().lock();
@@ -532,19 +562,45 @@ public class MerkleTree {
 
             // If current tree is empty, just use the source tree's structure
             if (this.rootHash == null || depth < 3) {
+                // First clear all existing nodes since we're replacing the entire tree
+                try (RocksIterator iterator = db.newIterator(nodesHandle)) {
+                    iterator.seekToFirst();
+                    try (WriteBatch batch = new WriteBatch()) {
+                        while (iterator.isValid()) {
+                            batch.delete(nodesHandle, iterator.key());
+                            iterator.next();
+                        }
+                        if (batch.count() > 0) {
+                            try (WriteOptions writeOptions = new WriteOptions()) {
+                                db.write(writeOptions, batch);
+                            }
+                        }
+                    }
+                }
+                
                 copyEntireTree(sourceTree);
-                return; // At least one node updated (the root)
+                return;
+            }
+
+            // Store all current nodes before update to identify which ones to remove later
+            Set<ByteArrayWrapper> oldNodeHashes = new HashSet<>();
+            try (RocksIterator iterator = db.newIterator(nodesHandle)) {
+                iterator.seekToFirst();
+                while (iterator.isValid()) {
+                    oldNodeHashes.add(new ByteArrayWrapper(iterator.key()));
+                    iterator.next();
+                }
             }
 
             // Compare trees and update nodes where needed
             compareAndUpdateNodes(this.rootHash, sourceTree.rootHash, sourceTree);
 
-            //Copy metadata
+            // Copy metadata
             this.numLeaves = sourceTree.numLeaves;
             this.depth = sourceTree.depth;
             this.rootHash = sourceTree.getRootHash(); // Ensure root hash matches source tree
 
-            //Copy hanging nodes
+            // Copy hanging nodes
             hangingNodes.clear();
             for (Map.Entry<Integer, Node> entry : sourceTree.hangingNodes.entrySet()) {
                 Integer level = entry.getKey();
@@ -566,6 +622,36 @@ public class MerkleTree {
                     }
                 }
             }
+
+            // Flush changes to disk to ensure all new nodes are written
+            flushToDisk();
+
+            // Clear all nodes and rebuild from source tree
+            try (WriteBatch batch = new WriteBatch()) {
+                // First delete all existing nodes
+                try (RocksIterator iterator = db.newIterator(nodesHandle)) {
+                    iterator.seekToFirst();
+                    while (iterator.isValid()) {
+                        batch.delete(nodesHandle, iterator.key());
+                        iterator.next();
+                    }
+                }
+                
+                // Then add all nodes from source tree
+                Set<Node> sourceNodes = sourceTree.getAllNodes();
+                for (Node node : sourceNodes) {
+                    batch.put(nodesHandle, node.getHash(), node.encode());
+                }
+                
+                if (batch.count() > 0) {
+                    try (WriteOptions writeOptions = new WriteOptions()) {
+                        db.write(writeOptions, batch);
+                    }
+                }
+            }
+            
+            // Clear the cache and reload from disk
+            nodesCache.clear();
         } finally {
             lock.writeLock().unlock();
         }
@@ -835,6 +921,7 @@ public class MerkleTree {
     /**
      * Represents a single node in the Merkle Tree.
      */
+    @Getter
     public class Node {
         private byte[] hash;
         private byte[] left;
@@ -1080,6 +1167,62 @@ public class MerkleTree {
             } finally {
                 lock.writeLock().unlock();
             }
+        }
+
+        @Override
+        public int hashCode() {
+            return Arrays.hashCode(encode());
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == null || !(obj instanceof Node)) {
+                return false;
+            }
+
+            Node other = (Node) obj;
+
+            if(this.hash == null && other.hash != null) {
+                return false;
+            } else if(this.hash != null && other.hash == null) {
+                return false;
+            } else if(this.hash != null && other.hash != null) {
+                if(!Arrays.equals(this.hash, other.hash)) {
+                    return false;
+                }
+            }
+
+            if(this.left == null && other.left != null) {
+                return false;
+            } else if(this.left != null && other.left == null) {
+                return false;
+            } else if(this.left != null && other.left != null) {
+                if(!Arrays.equals(this.left, other.left)) {
+                    return false;
+                }
+            }
+
+            if(this.right == null && other.right != null) {
+                return false;
+            } else if(this.right != null && other.right == null) {
+                return false;
+            } else if(this.right != null && other.right != null) {
+                if(!Arrays.equals(this.right, other.right)) {
+                    return false;
+                }
+            }
+
+            if(this.parent == null && other.parent != null) {
+                return false;
+            } else if(this.parent != null && other.parent == null) {
+                return false;
+            } else if(this.parent != null && other.parent != null) {
+                if(!Arrays.equals(this.parent, other.parent)) {
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
     //endregion

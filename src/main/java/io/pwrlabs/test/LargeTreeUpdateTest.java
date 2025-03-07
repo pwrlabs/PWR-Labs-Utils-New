@@ -2,10 +2,14 @@ package io.pwrlabs.test;
 
 import io.pwrlabs.database.rocksdb.MerkleTree;
 import io.pwrlabs.hashing.PWRHash;
+import io.pwrlabs.util.encoders.ByteArrayWrapper;
 import org.rocksdb.RocksDBException;
 
 import java.io.File;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Set;
 
 public class LargeTreeUpdateTest {
 
@@ -132,6 +136,28 @@ public class LargeTreeUpdateTest {
                 // Root hash should be different from before update
                 assertNotEquals(targetRootBeforeMerge, targetTree.getRootHash(),
                         "Target root should change after update");
+                
+                // Verify that the trees are identical by comparing root hashes
+                assertArrayEquals(sourceTree.getRootHash(), targetTree.getRootHash(),
+                        "Root hashes should match after update");
+
+                // Compare all nodes between trees
+                System.out.println("Comparing all nodes between trees...");
+
+                Set<MerkleTree.Node> sourceTreeNodes = sourceTree.getAllNodes();
+                Set<MerkleTree.Node> targetTreeNodes = targetTree.getAllNodes();
+
+                assertEquals(sourceTreeNodes.size(), targetTreeNodes.size(), "Trees should have the same number of nodes after update");
+
+                //Error if the trees are not the same
+
+                for(MerkleTree.Node node : sourceTreeNodes) {
+                    if(!targetTreeNodes.contains(node)) {
+                        throw new AssertionError("Trees should have the same nodes after update");
+                    }
+                }
+                
+                System.out.println("All nodes match between trees");
             } finally {
                 targetTree.close();
             }
@@ -200,6 +226,28 @@ public class LargeTreeUpdateTest {
                 // Root hash should be different from before update
                 assertNotEquals(targetRootBeforeMerge, targetTree.getRootHash(),
                         "Target root should change after update");
+                
+                // Verify that the trees are identical by comparing root hashes
+                assertArrayEquals(sourceTree.getRootHash(), targetTree.getRootHash(),
+                        "Root hashes should match after update");
+
+                // Compare all nodes between trees
+                System.out.println("Comparing all nodes between trees...");
+
+                Set<MerkleTree.Node> sourceTreeNodes = sourceTree.getAllNodes();
+                Set<MerkleTree.Node> targetTreeNodes = targetTree.getAllNodes();
+
+                assertEquals(sourceTreeNodes.size(), targetTreeNodes.size(), "Trees should have the same number of nodes after update");
+
+                //Error if the trees are not the same
+
+                for(MerkleTree.Node node : sourceTreeNodes) {
+                    if(!targetTreeNodes.contains(node)) {
+                        throw new AssertionError("Trees should have the same nodes after update");
+                    }
+                }
+
+                System.out.println("All nodes match between trees with different sizes");
             } finally {
                 targetTree.close();
             }
