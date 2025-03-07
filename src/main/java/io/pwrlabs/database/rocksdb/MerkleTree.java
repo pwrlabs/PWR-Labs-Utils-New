@@ -9,10 +9,7 @@ import org.rocksdb.*;
 
 import java.io.File;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -505,10 +502,10 @@ public class MerkleTree {
      * @return A list of all nodes in the tree
      * @throws RocksDBException If there's an error accessing RocksDB
      */
-    public List<Node> getAllNodes() throws RocksDBException {
-        lock.readLock().lock();
+    public HashSet<Node> getAllNodes() throws RocksDBException {
+        lock.writeLock().lock();
         try {
-            List<Node> allNodes = new ArrayList<>();
+            HashSet<Node> allNodes = new HashSet<>();
             
             // First flush any pending changes to disk
             flushToDisk();
@@ -517,7 +514,6 @@ public class MerkleTree {
             try (RocksIterator iterator = db.newIterator(nodesHandle)) {
                 iterator.seekToFirst();
                 while (iterator.isValid()) {
-                    byte[] nodeHash = iterator.key();
                     byte[] nodeData = iterator.value();
                     
                     // Decode the node from its binary representation
@@ -530,7 +526,7 @@ public class MerkleTree {
             
             return allNodes;
         } finally {
-            lock.readLock().unlock();
+            lock.writeLock().unlock();
         }
     }
 
@@ -869,6 +865,7 @@ public class MerkleTree {
     /**
      * Represents a single node in the Merkle Tree.
      */
+    @Getter
     public class Node {
         private byte[] hash;
         private byte[] left;
@@ -1114,6 +1111,62 @@ public class MerkleTree {
             } finally {
                 lock.writeLock().unlock();
             }
+        }
+
+        @Override
+        public int hashCode() {
+            return Arrays.hashCode(encode());
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == null || !(obj instanceof Node)) {
+                return false;
+            }
+
+            Node other = (Node) obj;
+
+            if(this.hash == null && other.hash != null) {
+                return false;
+            } else if(this.hash != null && other.hash == null) {
+                return false;
+            } else if(this.hash != null && other.hash != null) {
+                if(!Arrays.equals(this.hash, other.hash)) {
+                    return false;
+                }
+            }
+
+            if(this.left == null && other.left != null) {
+                return false;
+            } else if(this.left != null && other.left == null) {
+                return false;
+            } else if(this.left != null && other.left != null) {
+                if(!Arrays.equals(this.left, other.left)) {
+                    return false;
+                }
+            }
+
+            if(this.right == null && other.right != null) {
+                return false;
+            } else if(this.right != null && other.right == null) {
+                return false;
+            } else if(this.right != null && other.right != null) {
+                if(!Arrays.equals(this.right, other.right)) {
+                    return false;
+                }
+            }
+
+            if(this.parent == null && other.parent != null) {
+                return false;
+            } else if(this.parent != null && other.parent == null) {
+                return false;
+            } else if(this.parent != null && other.parent != null) {
+                if(!Arrays.equals(this.parent, other.parent)) {
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
     //endregion

@@ -9,6 +9,7 @@ import java.io.File;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Set;
 
 public class LargeTreeUpdateTest {
 
@@ -100,13 +101,13 @@ public class LargeTreeUpdateTest {
 
                 // Save target root before merge
                 byte[] targetRootBeforeMerge = targetTree.getRootHash();
-                int targetLeavesBeforeMerge = targetTree.numLeaves;
-                int targetDepthBeforeMerge = targetTree.depth;
+                int targetLeavesBeforeMerge = targetTree.getNumLeaves();
+                int targetDepthBeforeMerge = targetTree.getDepth();
 
                 // Save source tree metadata
                 byte[] sourceRoot = sourceTree.getRootHash();
-                int sourceLeaves = sourceTree.numLeaves;
-                int sourceDepth = sourceTree.depth;
+                int sourceLeaves = sourceTree.getNumLeaves();
+                int sourceDepth = sourceTree.getDepth();
 
                 System.out.println("Source tree: " + sourceLeaves + " leaves, depth " + sourceDepth);
                 System.out.println("Target tree before update: " + targetLeavesBeforeMerge + " leaves, depth " + targetDepthBeforeMerge);
@@ -118,40 +119,43 @@ public class LargeTreeUpdateTest {
                 System.out.println("Update completed in " + (endTime - startTime) + "ms");
 
                 // Verify target tree has been updated correctly
-                System.out.println("Target tree after update: " + targetTree.numLeaves + " leaves, depth " + targetTree.depth);
+                System.out.println("Target tree after update: " + targetTree.getNumLeaves() + " leaves, depth " + targetTree.getDepth());
 
                 // Root hash should match source tree
                 assertArrayEquals(sourceRoot, targetTree.getRootHash(),
                         "Target root should match source root after update");
 
                 // Number of leaves should match source tree
-                assertEquals(sourceLeaves, targetTree.numLeaves,
+                assertEquals(sourceLeaves, targetTree.getNumLeaves(),
                         "Target numLeaves should match source numLeaves after update");
 
                 // Depth should match source tree
-                assertEquals(sourceDepth, targetTree.depth,
+                assertEquals(sourceDepth, targetTree.getDepth(),
                         "Target depth should match source depth after update");
 
                 // Root hash should be different from before update
                 assertNotEquals(targetRootBeforeMerge, targetTree.getRootHash(),
                         "Target root should change after update");
                 
-                // Compare all nodes between trees
-                System.out.println("Comparing all nodes between trees...");
-                
-                // Get all nodes from both trees
-                var sourceNodes = sourceTree.getAllNodes();
-                var targetNodes = targetTree.getAllNodes();
-                
-                // First compare length
-                System.out.println("Source tree nodes: " + sourceNodes.size());
-                System.out.println("Target tree nodes: " + targetNodes.size());
-                assertEquals(sourceNodes.size(), targetNodes.size(), 
-                        "Trees should have the same number of nodes after update");
-                
                 // Verify that the trees are identical by comparing root hashes
                 assertArrayEquals(sourceTree.getRootHash(), targetTree.getRootHash(),
                         "Root hashes should match after update");
+
+                // Compare all nodes between trees
+                System.out.println("Comparing all nodes between trees...");
+
+                Set<MerkleTree.Node> sourceTreeNodes = sourceTree.getAllNodes();
+                Set<MerkleTree.Node> targetTreeNodes = targetTree.getAllNodes();
+
+                assertEquals(sourceTreeNodes.size(), targetTreeNodes.size(), "Trees should have the same number of nodes after update");
+
+                //Error if the trees are not the same
+
+                for(MerkleTree.Node node : sourceTreeNodes) {
+                    if(!targetTreeNodes.contains(node)) {
+                        throw new AssertionError("Trees should have the same nodes after update");
+                    }
+                }
                 
                 System.out.println("All nodes match between trees");
             } finally {
@@ -187,13 +191,13 @@ public class LargeTreeUpdateTest {
 
                 // Save target root before merge
                 byte[] targetRootBeforeMerge = targetTree.getRootHash();
-                int targetLeavesBeforeMerge = targetTree.numLeaves;
-                int targetDepthBeforeMerge = targetTree.depth;
+                int targetLeavesBeforeMerge = targetTree.getNumLeaves();
+                int targetDepthBeforeMerge = targetTree.getDepth();
 
                 // Save source tree metadata
                 byte[] sourceRoot = sourceTree.getRootHash();
-                int sourceLeaves = sourceTree.numLeaves;
-                int sourceDepth = sourceTree.depth;
+                int sourceLeaves = sourceTree.getNumLeaves();
+                int sourceDepth = sourceTree.getDepth();
 
                 System.out.println("Source tree: " + sourceLeaves + " leaves, depth " + sourceDepth);
                 System.out.println("Target tree before update: " + targetLeavesBeforeMerge + " leaves, depth " + targetDepthBeforeMerge);
@@ -205,41 +209,44 @@ public class LargeTreeUpdateTest {
                 System.out.println("Update completed in " + (endTime - startTime) + "ms");
 
                 // Verify target tree has been updated correctly
-                System.out.println("Target tree after update: " + targetTree.numLeaves + " leaves, depth " + targetTree.depth);
+                System.out.println("Target tree after update: " + targetTree.getNumLeaves() + " leaves, depth " + targetTree.getDepth());
 
                 // Root hash should match source tree
                 assertArrayEquals(sourceRoot, targetTree.getRootHash(),
                         "Target root should match source root after update");
 
                 // Number of leaves should match source tree
-                assertEquals(sourceLeaves, targetTree.numLeaves,
+                assertEquals(sourceLeaves, targetTree.getNumLeaves(),
                         "Target numLeaves should match source numLeaves after update");
 
                 // Depth should match source tree
-                assertEquals(sourceDepth, targetTree.depth,
+                assertEquals(sourceDepth, targetTree.getDepth(),
                         "Target depth should match source depth after update");
 
                 // Root hash should be different from before update
                 assertNotEquals(targetRootBeforeMerge, targetTree.getRootHash(),
                         "Target root should change after update");
                 
-                // Compare all nodes between trees
-                System.out.println("Comparing all nodes between trees with different sizes...");
-                
-                // Get all nodes from both trees
-                var sourceNodes = sourceTree.getAllNodes();
-                var targetNodes = targetTree.getAllNodes();
-                
-                // First compare length
-                System.out.println("Source tree nodes: " + sourceNodes.size());
-                System.out.println("Target tree nodes: " + targetNodes.size());
-                assertEquals(sourceNodes.size(), targetNodes.size(), 
-                        "Trees should have the same number of nodes after update");
-                
                 // Verify that the trees are identical by comparing root hashes
                 assertArrayEquals(sourceTree.getRootHash(), targetTree.getRootHash(),
                         "Root hashes should match after update");
-                
+
+                // Compare all nodes between trees
+                System.out.println("Comparing all nodes between trees...");
+
+                Set<MerkleTree.Node> sourceTreeNodes = sourceTree.getAllNodes();
+                Set<MerkleTree.Node> targetTreeNodes = targetTree.getAllNodes();
+
+                assertEquals(sourceTreeNodes.size(), targetTreeNodes.size(), "Trees should have the same number of nodes after update");
+
+                //Error if the trees are not the same
+
+                for(MerkleTree.Node node : sourceTreeNodes) {
+                    if(!targetTreeNodes.contains(node)) {
+                        throw new AssertionError("Trees should have the same nodes after update");
+                    }
+                }
+
                 System.out.println("All nodes match between trees with different sizes");
             } finally {
                 targetTree.close();
