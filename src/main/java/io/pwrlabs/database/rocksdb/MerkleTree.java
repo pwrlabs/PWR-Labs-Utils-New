@@ -560,6 +560,28 @@ public class MerkleTree {
         try {
             flushToDisk();
 
+            // If current tree is empty, just use the source tree's structure
+            if (this.rootHash == null || depth < 3) {
+                // First clear all existing nodes since we're replacing the entire tree
+                try (RocksIterator iterator = db.newIterator(nodesHandle)) {
+                    iterator.seekToFirst();
+                    try (WriteBatch batch = new WriteBatch()) {
+                        while (iterator.isValid()) {
+                            batch.delete(nodesHandle, iterator.key());
+                            iterator.next();
+                        }
+                        if (batch.count() > 0) {
+                            try (WriteOptions writeOptions = new WriteOptions()) {
+                                db.write(writeOptions, batch);
+                            }
+                        }
+                    }
+                }
+                
+                copyEntireTree(sourceTree);
+                return;
+            }
+
             // Store all current nodes before update to identify which ones to remove later
             Set<ByteArrayWrapper> oldNodeHashes = new HashSet<>();
             try (RocksIterator iterator = db.newIterator(nodesHandle)) {
@@ -570,21 +592,15 @@ public class MerkleTree {
                 }
             }
 
-            // If current tree is empty, just use the source tree's structure
-            if (this.rootHash == null || depth < 3) {
-                copyEntireTree(sourceTree);
-                return; // At least one node updated (the root)
-            }
-
             // Compare trees and update nodes where needed
             compareAndUpdateNodes(this.rootHash, sourceTree.rootHash, sourceTree);
 
-            //Copy metadata
+            // Copy metadata
             this.numLeaves = sourceTree.numLeaves;
             this.depth = sourceTree.depth;
             this.rootHash = sourceTree.getRootHash(); // Ensure root hash matches source tree
 
-            //Copy hanging nodes
+            // Copy hanging nodes
             hangingNodes.clear();
             for (Map.Entry<Integer, Node> entry : sourceTree.hangingNodes.entrySet()) {
                 Integer level = entry.getKey();
@@ -610,22 +626,21 @@ public class MerkleTree {
             // Flush changes to disk to ensure all new nodes are written
             flushToDisk();
 
-            // Get all current node hashes after update
-            Set<ByteArrayWrapper> currentNodeHashes = new HashSet<>();
-            try (RocksIterator iterator = db.newIterator(nodesHandle)) {
-                iterator.seekToFirst();
-                while (iterator.isValid()) {
-                    currentNodeHashes.add(new ByteArrayWrapper(iterator.key()));
-                    iterator.next();
-                }
-            }
-
-            // Create a batch to delete old nodes that are no longer needed
+            // Clear all nodes and rebuild from source tree
             try (WriteBatch batch = new WriteBatch()) {
-                for (ByteArrayWrapper oldHash : oldNodeHashes) {
-                    if (!currentNodeHashes.contains(oldHash)) {
-                        batch.delete(nodesHandle, oldHash.data());
+                // First delete all existing nodes
+                try (RocksIterator iterator = db.newIterator(nodesHandle)) {
+                    iterator.seekToFirst();
+                    while (iterator.isValid()) {
+                        batch.delete(nodesHandle, iterator.key());
+                        iterator.next();
                     }
+                }
+                
+                // Then add all nodes from source tree
+                Set<Node> sourceNodes = sourceTree.getAllNodes();
+                for (Node node : sourceNodes) {
+                    batch.put(nodesHandle, node.getHash(), node.encode());
                 }
                 
                 if (batch.count() > 0) {
@@ -634,6 +649,9 @@ public class MerkleTree {
                     }
                 }
             }
+            
+            // Clear the cache and reload from disk
+            nodesCache.clear();
         } finally {
             lock.writeLock().unlock();
         }
