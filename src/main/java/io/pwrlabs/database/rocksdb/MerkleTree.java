@@ -33,6 +33,7 @@ public class MerkleTree {
     private static final int HASH_LENGTH = 32;
     private static final String METADATA_DB_NAME = "metaData";
     private static final String NODES_DB_NAME = "nodes";
+    private static final String KEY_DATA_DB_NAME = "keyData";
 
     // Metadata Keys
     private static final String KEY_ROOT_HASH = "rootHash";
@@ -47,6 +48,7 @@ public class MerkleTree {
     private final RocksDB db;
     private ColumnFamilyHandle metaDataHandle;
     private ColumnFamilyHandle nodesHandle;
+    private ColumnFamilyHandle keyDataHandle;
 
 
     /** Cache of loaded nodes (in-memory for quick access). */
@@ -293,6 +295,8 @@ public class MerkleTree {
                 METADATA_DB_NAME.getBytes(), cfOptions));
         cfDescriptors.add(new ColumnFamilyDescriptor(
                 NODES_DB_NAME.getBytes(), cfOptions));
+        cfDescriptors.add(new ColumnFamilyDescriptor(
+                KEY_DATA_DB_NAME.getBytes(), cfOptions));
 
         // 5. Open DB with all column families
         this.db = RocksDB.open(dbOptions, dbPath, cfDescriptors, cfHandles);
@@ -300,6 +304,7 @@ public class MerkleTree {
         // 6. Assign handles
         this.metaDataHandle = cfHandles.get(1);
         this.nodesHandle = cfHandles.get(2);
+        this.keyDataHandle = cfHandles.get(3);
 
         // 7. Load initial metadata
         loadMetaData();
@@ -443,8 +448,17 @@ public class MerkleTree {
             } else {
                 // If a node is already hanging at this level, attach the new node as a leaf
                 Node parentNodeOfHangingNode = getNodeByHash(hangingNode.parent);
-                parentNodeOfHangingNode.addLeaf(node.hash);
-                hangingNodes.remove(level);
+                if (parentNodeOfHangingNode != null) {
+                    parentNodeOfHangingNode.addLeaf(node.hash);
+                    hangingNodes.remove(level);
+                } else {
+                    // If parent node is null, create a new parent node
+                    Node parent = new Node(hangingNode.hash, node.hash);
+                    hangingNode.setParentNodeHash(parent.hash);
+                    node.setParentNodeHash(parent.hash);
+                    hangingNodes.remove(level);
+                    addNode(level + 1, parent);
+                }
             }
         } finally {
             lock.writeLock().unlock();
@@ -529,6 +543,82 @@ public class MerkleTree {
         }
     }
 
+    /**
+     * Add or update data for a key in the Merkle Tree.
+     * This will create a new leaf node with a hash derived from the key and data,
+     * or update an existing leaf if the key already exists.
+     *
+     * @param key The key to store data for
+     * @param data The data to store
+     * @throws RocksDBException If there's an error accessing RocksDB
+     * @throws IllegalArgumentException If key or data is null
+     */
+    /**
+     * Get data for a key from the Merkle Tree.
+     *
+     * @param key The key to retrieve data for
+     * @return The data for the key, or null if the key doesn't exist
+     * @throws RocksDBException If there's an error accessing RocksDB
+     * @throws IllegalArgumentException If key is null
+     */
+    public byte[] getData(byte[] key) throws RocksDBException {
+        if (key == null) {
+            throw new IllegalArgumentException("Key cannot be null");
+        }
+        
+        lock.readLock().lock();
+        try {
+            return db.get(keyDataHandle, key);
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+    
+    /**
+     * Add or update data for a key in the Merkle Tree.
+     * This will create a new leaf node with a hash derived from the key and data,
+     * or update an existing leaf if the key already exists.
+     *
+     * @param key The key to store data for
+     * @param data The data to store
+     * @throws RocksDBException If there's an error accessing RocksDB
+     * @throws IllegalArgumentException If key or data is null
+     */
+    public void addOrUpdateData(byte[] key, byte[] data) throws RocksDBException {
+        if (key == null) {
+            throw new IllegalArgumentException("Key cannot be null");
+        }
+        if (data == null) {
+            throw new IllegalArgumentException("Data cannot be null");
+        }
+        
+        lock.writeLock().lock();
+        try {
+            // Check if key already exists
+            byte[] existingData = getData(key);
+            
+            // Calculate hash from key and data
+            byte[] leafHash = PWRHash.hash256(key, data);
+            
+            // Store key-data mapping
+            db.put(keyDataHandle, key, data);
+            
+            if (existingData == null) {
+                // Key doesn't exist, add new leaf
+                addLeaf(new Node(leafHash));
+            } else {
+                // Key exists, update leaf
+                // First get the old leaf hash
+                byte[] oldLeafHash = PWRHash.hash256(key, existingData);
+                updateLeaf(oldLeafHash, leafHash);
+            }
+            
+            flushToDisk();
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+    
     public void revertUnsavedChanges() {
         lock.writeLock().lock();
         try {
@@ -649,6 +739,22 @@ public class MerkleTree {
                 }
             }
             
+            // Copy key-data mappings from source tree
+            try (RocksIterator iterator = sourceTree.db.newIterator(sourceTree.keyDataHandle)) {
+                iterator.seekToFirst();
+                try (WriteBatch batch = new WriteBatch()) {
+                    while (iterator.isValid()) {
+                        batch.put(keyDataHandle, iterator.key(), iterator.value());
+                        iterator.next();
+                    }
+                    if (batch.count() > 0) {
+                        try (WriteOptions writeOptions = new WriteOptions()) {
+                            db.write(writeOptions, batch);
+                        }
+                    }
+                }
+            }
+            
             // Clear the cache and reload from disk
             nodesCache.clear();
         } finally {
@@ -676,6 +782,14 @@ public class MerkleTree {
             if (nodesHandle != null) {
                 try {
                     nodesHandle.close();
+                } catch (Exception e) {
+                    // Log error
+                }
+            }
+            
+            if (keyDataHandle != null) {
+                try {
+                    keyDataHandle.close();
                 } catch (Exception e) {
                     // Log error
                 }
@@ -907,9 +1021,28 @@ public class MerkleTree {
 
             // Update hanging nodes
             for (Map.Entry<Integer, Node> entry : sourceTree.hangingNodes.entrySet()) {
-                this.hangingNodes.put(entry.getKey(), getNodeByHash(entry.getValue().hash));
+                Node node = getNodeByHash(entry.getValue().hash);
+                if (node != null) {
+                    this.hangingNodes.put(entry.getKey(), node);
+                }
             }
 
+            // Copy key-data mappings from source tree
+            try (RocksIterator iterator = sourceTree.db.newIterator(sourceTree.keyDataHandle)) {
+                iterator.seekToFirst();
+                try (WriteBatch batch = new WriteBatch()) {
+                    while (iterator.isValid()) {
+                        batch.put(keyDataHandle, iterator.key(), iterator.value());
+                        iterator.next();
+                    }
+                    if (batch.count() > 0) {
+                        try (WriteOptions writeOptions = new WriteOptions()) {
+                            db.write(writeOptions, batch);
+                        }
+                    }
+                }
+            }
+            
             flushToDisk();
         }
     }
