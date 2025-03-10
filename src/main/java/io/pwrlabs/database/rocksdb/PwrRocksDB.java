@@ -1,17 +1,16 @@
 package io.pwrlabs.database.rocksdb;
 
 
+import io.pwrlabs.concurrency.ConcurrentList;
 import io.pwrlabs.util.files.FileUtils;
 import io.pwrlabs.hashing.PWRHash;
 import org.bouncycastle.util.encoders.Hex;
 import org.rocksdb.*;
 
+import java.awt.image.AreaAveragingScaleFilter;
 import java.io.File;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -27,7 +26,7 @@ public class PwrRocksDB {
     private final ReadWriteLock constructorLock = new ReentrantReadWriteLock();
 
     private static final Map<String /*Path*/, PwrRocksDB> instances = new ConcurrentHashMap<>();
-    private static final List<PwrRocksIterator> activeIterators = new ArrayList<>();
+    private static final ConcurrentList<PwrRocksIterator> activeIterators = new ConcurrentList<>();
 
     protected PwrRocksDB(RocksDB db, Options options) {
         constructorLock.writeLock().lock();
@@ -290,7 +289,12 @@ public class PwrRocksDB {
 
     private void clearClosedIterators() {
         if(activeIterators == null || activeIterators.isEmpty()) return;
-        activeIterators.removeIf(PwrRocksIterator::isClosed);
+
+        for (PwrRocksIterator iterator : activeIterators.getArrayListCopy()) {
+            if (iterator.isClosed()) {
+                activeIterators.remove(iterator);
+            }
+        }
     }
 
     private static byte[] addCorruptionGuard(byte[] data) {
@@ -305,6 +309,10 @@ public class PwrRocksDB {
     }
 
     private static byte[] removeCorruptionGuard(byte[] data) {
+        if (data == null || data.length < 28) {
+            return data; // Return original data or handle error appropriately
+        }
+
         byte[] result = new byte[data.length - 28];
         System.arraycopy(data, 0, result, 0, data.length - 28);
         return result;

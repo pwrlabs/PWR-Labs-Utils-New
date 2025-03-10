@@ -21,7 +21,6 @@ import static io.pwrlabs.newerror.NewError.errorIf;
  */
 public class MerkleTree {
 
-
     //region ===================== Statics =====================
     static {
         RocksDB.loadLibrary();
