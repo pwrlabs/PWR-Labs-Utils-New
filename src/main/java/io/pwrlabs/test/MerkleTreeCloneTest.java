@@ -18,6 +18,15 @@ public class MerkleTreeCloneTest {
             // Run only the first test for now
             testCloneEmptyTree();
             System.out.println("testCloneEmptyTree passed");
+
+            testCloneTreeWithLeaves();
+            System.out.println("testCloneTreeWithLeaves passed");
+
+            testCloneTreeWithKeyValueData();
+            System.out.println("testCloneTreeWithKeyValueData passed");
+
+            testCloneExistingTree();
+            System.out.println("testCloneExistingTree passed");
             
             System.out.println("All tests passed.");
         } catch (Exception e) {
@@ -80,6 +89,7 @@ public class MerkleTreeCloneTest {
             }
         } finally {
             sourceTree.close();
+            System.out.println("sourceTree closed");
         }
     }
     

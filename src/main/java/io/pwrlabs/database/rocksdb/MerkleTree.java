@@ -3,6 +3,7 @@ package io.pwrlabs.database.rocksdb;
 import io.pwrlabs.hashing.PWRHash;
 import io.pwrlabs.util.encoders.ByteArrayWrapper;
 import io.pwrlabs.util.encoders.Hex;
+import io.pwrlabs.util.files.FileUtils;
 import lombok.Getter;
 import lombok.SneakyThrows;
 import org.rocksdb.*;
@@ -646,7 +647,7 @@ public class MerkleTree {
             throw new IllegalArgumentException("Tree name cannot be null or empty");
         }
         
-        lock.readLock().lock();
+        lock.writeLock().lock();
         try {
             // Ensure source tree is flushed to disk
             flushToDisk();
@@ -663,19 +664,21 @@ public class MerkleTree {
             if (treeDir.exists()) {
                 deleteDirectory(treeDir);
             }
-            
-            // Create a new tree with the target name
-            MerkleTree clonedTree = new MerkleTree(treeName);
-            
-            // Copy the entire tree structure, metadata, and key-value data
-            clonedTree.updateWithTree(this);
-            
-            return clonedTree;
+
+            if(getNumLeaves() > 0) {
+                try (Checkpoint checkpoint = Checkpoint.create(db)) {
+                    // Create a checkpoint and copy the state to the destination directory
+                    checkpoint.createCheckpoint(treeDir.getAbsolutePath());
+                }
+            }
+
+            // Open the cloned tree
+            return new MerkleTree(treeName);
         } finally {
-            lock.readLock().unlock();
+            lock.writeLock().unlock();
         }
     }
-    
+
     /**
      * Helper method to recursively delete a directory.
      */
