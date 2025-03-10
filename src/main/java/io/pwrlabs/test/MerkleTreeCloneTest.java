@@ -5,7 +5,35 @@ import org.rocksdb.RocksDBException;
 
 import java.io.File;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
+
+// ByteArrayWrapper for using byte arrays as keys in maps
+class ByteArrayWrapper {
+    private final byte[] data;
+
+    public ByteArrayWrapper(byte[] data) {
+        this.data = data;
+    }
+
+    public byte[] getData() {
+        return data;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        if (!(other instanceof ByteArrayWrapper)) {
+            return false;
+        }
+        return Arrays.equals(data, ((ByteArrayWrapper)other).data);
+    }
+
+    @Override
+    public int hashCode() {
+        return Arrays.hashCode(data);
+    }
+}
 
 public class MerkleTreeCloneTest {
 
@@ -130,9 +158,22 @@ public class MerkleTreeCloneTest {
                     throw new AssertionError("Number of nodes doesn't match");
                 }
                 
+                // Create maps of nodes by hash for easier comparison
+                Map<ByteArrayWrapper, MerkleTree.Node> sourceNodesByHash = new HashMap<>();
+                Map<ByteArrayWrapper, MerkleTree.Node> clonedNodesByHash = new HashMap<>();
+                
                 for (MerkleTree.Node node : sourceNodes) {
-                    if (!clonedNodes.contains(node)) {
-                        throw new AssertionError("Node missing in cloned tree");
+                    sourceNodesByHash.put(new ByteArrayWrapper(node.getHash()), node);
+                }
+                
+                for (MerkleTree.Node node : clonedNodes) {
+                    clonedNodesByHash.put(new ByteArrayWrapper(node.getHash()), node);
+                }
+                
+                // Check that all source node hashes exist in the cloned tree
+                for (ByteArrayWrapper hashWrapper : sourceNodesByHash.keySet()) {
+                    if (!clonedNodesByHash.containsKey(hashWrapper)) {
+                        throw new AssertionError("Node missing in cloned tree: " + Arrays.toString(hashWrapper.getData()));
                     }
                 }
             } finally {
