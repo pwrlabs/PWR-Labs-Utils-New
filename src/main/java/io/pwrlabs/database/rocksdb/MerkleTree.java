@@ -3,6 +3,7 @@ package io.pwrlabs.database.rocksdb;
 import io.pwrlabs.hashing.PWRHash;
 import io.pwrlabs.util.encoders.ByteArrayWrapper;
 import io.pwrlabs.util.encoders.Hex;
+import io.pwrlabs.util.files.FileUtils;
 import lombok.Getter;
 import lombok.SneakyThrows;
 import org.rocksdb.*;
@@ -632,6 +633,68 @@ public class MerkleTree {
             lock.writeLock().unlock();
         }
     }
+    
+    /**
+     * Creates a clone of this MerkleTree with a new name.
+     * If a tree with the target name already exists, it will be deleted first.
+     *
+     * @param treeName The name for the cloned tree
+     * @return The newly created MerkleTree
+     * @throws RocksDBException If an error occurs during cloning
+     */
+    public MerkleTree clone(String treeName) throws RocksDBException {
+        if (treeName == null || treeName.isEmpty()) {
+            throw new IllegalArgumentException("Tree name cannot be null or empty");
+        }
+        
+        lock.writeLock().lock();
+        try {
+            // Ensure source tree is flushed to disk
+            flushToDisk();
+            
+            // Check if a tree with the target name already exists
+            MerkleTree existingTree = openTrees.get(treeName);
+            if (existingTree != null) {
+                // Close the existing tree to release resources
+                existingTree.close();
+            }
+            
+            // Delete the directory if it exists
+            File treeDir = new File("merkleTree/" + treeName);
+            if (treeDir.exists()) {
+                deleteDirectory(treeDir);
+            }
+            
+            // Create a new tree with the target name
+            MerkleTree clonedTree = new MerkleTree(treeName);
+            
+            // Copy the entire tree structure, metadata, and key-value data
+            clonedTree.updateWithTree(this);
+            
+            return clonedTree;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Helper method to recursively delete a directory.
+     */
+    private void deleteDirectory(File directory) {
+        if (directory.exists()) {
+            File[] files = directory.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    if (file.isDirectory()) {
+                        deleteDirectory(file);
+                    } else {
+                        file.delete();
+                    }
+                }
+            }
+            directory.delete();
+        }
+    }
 
     /**
      * Efficiently update this tree with nodes from another tree by recursively
@@ -728,8 +791,18 @@ public class MerkleTree {
                 
                 // Then add all nodes from source tree
                 Set<Node> sourceNodes = sourceTree.getAllNodes();
-                for (Node node : sourceNodes) {
-                    batch.put(nodesHandle, node.getHash(), node.encode());
+                for (Node sourceNode : sourceNodes) {
+                    // Create a new node in this tree with the same structure
+                    Node newNode = new Node(
+                        sourceNode.getHash(),
+                        sourceNode.getLeft(),
+                        sourceNode.getRight(),
+                        sourceNode.getParent()
+                    );
+                    
+                    // Add to cache and batch
+                    nodesCache.put(new ByteArrayWrapper(newNode.getHash()), newNode);
+                    batch.put(nodesHandle, newNode.getHash(), newNode.encode());
                 }
                 
                 if (batch.count() > 0) {
@@ -1314,6 +1387,7 @@ public class MerkleTree {
 
             Node other = (Node) obj;
 
+            // Compare hash - this is the most important field
             if(this.hash == null && other.hash != null) {
                 return false;
             } else if(this.hash != null && other.hash == null) {
@@ -1324,6 +1398,7 @@ public class MerkleTree {
                 }
             }
 
+            // Compare left child reference
             if(this.left == null && other.left != null) {
                 return false;
             } else if(this.left != null && other.left == null) {
@@ -1334,6 +1409,7 @@ public class MerkleTree {
                 }
             }
 
+            // Compare right child reference
             if(this.right == null && other.right != null) {
                 return false;
             } else if(this.right != null && other.right == null) {
@@ -1344,15 +1420,8 @@ public class MerkleTree {
                 }
             }
 
-            if(this.parent == null && other.parent != null) {
-                return false;
-            } else if(this.parent != null && other.parent == null) {
-                return false;
-            } else if(this.parent != null && other.parent != null) {
-                if(!Arrays.equals(this.parent, other.parent)) {
-                    return false;
-                }
-            }
+            // Note: We don't compare parent references as they can legitimately differ
+            // between source and cloned trees while still representing the same logical node
 
             return true;
         }
