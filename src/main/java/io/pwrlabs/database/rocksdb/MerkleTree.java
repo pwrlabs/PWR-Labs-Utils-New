@@ -55,6 +55,8 @@ public class MerkleTree {
     /** Cache of loaded nodes (in-memory for quick access). */
     private final Map<ByteArrayWrapper, Node> nodesCache = new ConcurrentHashMap<>();
 
+    private final Map<ByteArrayWrapper /*Key*/, byte[] /*data*/> keyDataCache = new ConcurrentHashMap<>();
+
     /** Lock for reading/writing to the tree. */
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
@@ -493,6 +495,10 @@ public class MerkleTree {
                     }
                 }
 
+                for(Map.Entry<ByteArrayWrapper, byte[]> entry : keyDataCache.entrySet()) {
+                    batch.put(keyDataHandle, entry.getKey().data(), entry.getValue());
+                }
+
                 try (WriteOptions writeOptions = new WriteOptions()) {
                     db.write(writeOptions, batch);
                 }
@@ -545,16 +551,6 @@ public class MerkleTree {
     }
 
     /**
-     * Add or update data for a key in the Merkle Tree.
-     * This will create a new leaf node with a hash derived from the key and data,
-     * or update an existing leaf if the key already exists.
-     *
-     * @param key The key to store data for
-     * @param data The data to store
-     * @throws RocksDBException If there's an error accessing RocksDB
-     * @throws IllegalArgumentException If key or data is null
-     */
-    /**
      * Get data for a key from the Merkle Tree.
      *
      * @param key The key to retrieve data for
@@ -562,16 +558,14 @@ public class MerkleTree {
      * @throws RocksDBException If there's an error accessing RocksDB
      * @throws IllegalArgumentException If key is null
      */
-    public byte[] getData(byte[] key) throws RocksDBException {
-        if (key == null) {
-            throw new IllegalArgumentException("Key cannot be null");
-        }
-        
-        lock.readLock().lock();
+    public byte[] getData(byte[] key) {
+        byte[] data = keyDataCache.get(new ByteArrayWrapper(key));
+        if(data != null) return data;
+
         try {
             return db.get(keyDataHandle, key);
-        } finally {
-            lock.readLock().unlock();
+        } catch (RocksDBException e) {
+            throw new RuntimeException(e);
         }
     }
     
@@ -602,7 +596,7 @@ public class MerkleTree {
             byte[] leafHash = PWRHash.hash256(key, data);
             
             // Store key-data mapping
-            db.put(keyDataHandle, key, data);
+            keyDataCache.put(new ByteArrayWrapper(key), data);
             
             if (existingData == null) {
                 // Key doesn't exist, add new leaf
@@ -625,6 +619,7 @@ public class MerkleTree {
         try {
             nodesCache.clear();
             hangingNodes.clear();
+            keyDataCache.clear();
 
             loadMetaData();
         } catch (RocksDBException e) {
