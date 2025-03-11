@@ -838,6 +838,27 @@ public class MerkleTree {
     public void flushToDisk() throws RocksDBException {
         lock.writeLock().lock();
         try {
+            //clear old metadata from disk
+            try (WriteBatch batch = new WriteBatch()) {
+                batch.delete(metaDataHandle, KEY_ROOT_HASH.getBytes());
+                batch.delete(metaDataHandle, KEY_NUM_LEAVES.getBytes());
+                batch.delete(metaDataHandle, KEY_DEPTH.getBytes());
+
+                try (RocksIterator iterator = db.newIterator(metaDataHandle)) {
+                    iterator.seekToFirst();
+                    while (iterator.isValid()) {
+                        batch.delete(metaDataHandle, iterator.key());
+                        iterator.next();
+                    }
+                }
+
+                if (batch.count() > 0) {
+                    try (WriteOptions writeOptions = new WriteOptions()) {
+                        db.write(writeOptions, batch);
+                    }
+                }
+            }
+
             try (WriteBatch batch = new WriteBatch()) {
                 if (rootHash != null) {
                     batch.put(metaDataHandle, KEY_ROOT_HASH.getBytes(), rootHash);
