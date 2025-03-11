@@ -850,6 +850,23 @@ public class MerkleTree {
         }
     }
 
+    public List<byte[]> getAllKeys() {
+        lock.readLock().lock();
+        try {
+            List<byte[]> keys = new ArrayList<>();
+            try (RocksIterator iterator = db.newIterator(keyDataHandle)) {
+                iterator.seekToFirst();
+                while (iterator.isValid()) {
+                    keys.add(iterator.key());
+                    iterator.next();
+                }
+            }
+            return keys;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
     /**
      * Close the databases (optional, if you need cleanup).
      */
