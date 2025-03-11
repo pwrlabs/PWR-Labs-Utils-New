@@ -60,7 +60,7 @@ public class MerkleTree {
     /** Lock for reading/writing to the tree. */
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
-    private final Map<Integer /*level*/, Node> hangingNodes = new ConcurrentHashMap<>();
+    private final Map<Integer /*level*/, byte[]> hangingNodes = new ConcurrentHashMap<>();
     @Getter
     private int numLeaves = 0;
     @Getter
@@ -343,14 +343,14 @@ public class MerkleTree {
         lock.writeLock().lock();
         try {
             if (numLeaves == 0) {
-                hangingNodes.put(0, leafNode);
+                hangingNodes.put(0, leafNode.hash);
                 rootHash = leafNode.hash;
             } else {
-                Node hangingLeaf = hangingNodes.get(0);
+                Node hangingLeaf = getNodeByHash(hangingNodes.get(0));
 
                 // If there's no hanging leaf at level 0, place this one there.
                 if (hangingLeaf == null) {
-                    hangingNodes.put(0, leafNode);
+                    hangingNodes.put(0, leafNode.hash);
 
                     Node parentNode = new Node(leafNode.hash, null);
                     leafNode.setParentNodeHash(parentNode.hash);
@@ -427,11 +427,11 @@ public class MerkleTree {
         lock.writeLock().lock();
         try {
             if (level > depth) depth = level;
-            Node hangingNode = hangingNodes.get(level);
+            Node hangingNode = getNodeByHash(hangingNodes.get(level));
 
             if (hangingNode == null) {
                 // No hanging node at this level, so let's hang this node.
-                hangingNodes.put(level, node);
+                hangingNodes.put(level, node.hash);
 
                 // If this level is the depth level, this node's hash is the new root hash
                 if (level >= depth) {
@@ -701,20 +701,20 @@ public class MerkleTree {
 
             // Copy hanging nodes
             hangingNodes.clear();
-            for (Map.Entry<Integer, Node> entry : sourceTree.hangingNodes.entrySet()) {
+            for (Map.Entry<Integer, byte[]> entry : sourceTree.hangingNodes.entrySet()) {
                 Integer level = entry.getKey();
-                byte[] nodeHash = entry.getValue().hash;
+                byte[] nodeHash = entry.getValue();
 
                 Node node = getNodeByHash(nodeHash);
                 if (node != null) {
-                    hangingNodes.put(level, node);
+                    hangingNodes.put(level, node.hash);
                 } else {
                     // If node doesn't exist in target tree, create it
-                    Node sourceNode = entry.getValue();
+                    Node sourceNode = getNodeByHash(entry.getValue());
                     try {
                         node = copySubtree(sourceNode, sourceTree);
                         if (node != null) {
-                            hangingNodes.put(level, node);
+                            hangingNodes.put(level, node.hash);
                         }
                     } catch (RocksDBException e) {
                         throw new RuntimeException("Error copying hanging node: " + e.getMessage(), e);
@@ -845,10 +845,10 @@ public class MerkleTree {
                 batch.put(metaDataHandle, KEY_NUM_LEAVES.getBytes(), ByteBuffer.allocate(4).putInt(numLeaves).array());
                 batch.put(metaDataHandle, KEY_DEPTH.getBytes(), ByteBuffer.allocate(4).putInt(depth).array());
 
-                for (Map.Entry<Integer, Node> entry : hangingNodes.entrySet()) {
+                for (Map.Entry<Integer, byte[]> entry : hangingNodes.entrySet()) {
                     Integer level = entry.getKey();
-                    Node node = entry.getValue();
-                    batch.put(metaDataHandle, (KEY_HANGING_NODE_PREFIX + level).getBytes(), node.hash);
+                    byte[] nodeHash = entry.getValue();
+                    batch.put(metaDataHandle, (KEY_HANGING_NODE_PREFIX + level).getBytes(), nodeHash);
                 }
 
                 for (Node node : nodesCache.values()) {
@@ -1087,7 +1087,7 @@ public class MerkleTree {
                 byte[] hash = db.get(metaDataHandle, (KEY_HANGING_NODE_PREFIX + i).getBytes());
                 if (hash != null) {
                     Node node = getNodeByHash(hash);
-                    hangingNodes.put(i, node);
+                    hangingNodes.put(i, node.hash);
                 }
             }
         } finally {
@@ -1272,10 +1272,10 @@ public class MerkleTree {
             this.numLeaves = sourceTree.getNumLeaves();
 
             // Update hanging nodes
-            for (Map.Entry<Integer, Node> entry : sourceTree.hangingNodes.entrySet()) {
-                Node node = getNodeByHash(entry.getValue().hash);
+            for (Map.Entry<Integer, byte[]> entry : sourceTree.hangingNodes.entrySet()) {
+                Node node = getNodeByHash(entry.getValue());
                 if (node != null) {
-                    this.hangingNodes.put(entry.getKey(), node);
+                    this.hangingNodes.put(entry.getKey(), node.hash);
                 }
             }
 
@@ -1439,6 +1439,13 @@ public class MerkleTree {
 
                 byte[] oldHash = this.hash;
                 this.hash = newHash;
+
+                for(Map.Entry<Integer, byte[]> entry : hangingNodes.entrySet()) {
+                    if(Arrays.equals(entry.getValue(), oldHash)) {
+                        hangingNodes.put(entry.getKey(), newHash);
+                        break;
+                    }
+                }
 
                 nodesCache.remove(new ByteArrayWrapper(oldHash));
                 nodesCache.put(new ByteArrayWrapper(newHash), this);
