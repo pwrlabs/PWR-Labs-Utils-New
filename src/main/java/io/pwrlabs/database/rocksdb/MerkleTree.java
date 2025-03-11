@@ -46,7 +46,7 @@ public class MerkleTree {
     //region ===================== Fields =====================
     @Getter
     private final String treeName;
-    private final RocksDB db;
+    private RocksDB db;
     private ColumnFamilyHandle metaDataHandle;
     private ColumnFamilyHandle nodesHandle;
     private ColumnFamilyHandle keyDataHandle;
@@ -469,55 +469,6 @@ public class MerkleTree {
     }
 
     /**
-     * Flush all in-memory changes (nodes, metadata) to RocksDB.
-     */
-    public void flushToDisk() throws RocksDBException {
-        lock.writeLock().lock();
-        try {
-            try (WriteBatch batch = new WriteBatch()) {
-                if (rootHash != null) {
-                    batch.put(metaDataHandle, KEY_ROOT_HASH.getBytes(), rootHash);
-                }
-                batch.put(metaDataHandle, KEY_NUM_LEAVES.getBytes(), ByteBuffer.allocate(4).putInt(numLeaves).array());
-                batch.put(metaDataHandle, KEY_DEPTH.getBytes(), ByteBuffer.allocate(4).putInt(depth).array());
-
-                for (Map.Entry<Integer, Node> entry : hangingNodes.entrySet()) {
-                    Integer level = entry.getKey();
-                    Node node = entry.getValue();
-                    batch.put(metaDataHandle, (KEY_HANGING_NODE_PREFIX + level).getBytes(), node.hash);
-                }
-
-                for (Node node : nodesCache.values()) {
-                    batch.put(nodesHandle, node.hash, node.encode());
-
-                    if (node.getNodeHashToRemoveFromDb() != null) {
-                        batch.delete(nodesHandle, node.getNodeHashToRemoveFromDb());
-                    }
-                }
-
-                for(Map.Entry<ByteArrayWrapper, byte[]> entry : keyDataCache.entrySet()) {
-                    batch.put(keyDataHandle, entry.getKey().data(), entry.getValue());
-                }
-
-                try (WriteOptions writeOptions = new WriteOptions()) {
-                    db.write(writeOptions, batch);
-                }
-
-                nodesCache.clear();
-            }
-        } finally {
-            lock.writeLock().unlock();
-        }
-    }
-
-    /**
-     * Get the current root hash of the Merkle tree.
-     */
-    public byte[] getRootHash() {
-        return rootHash;
-    }
-    
-    /**
      * Get all nodes saved on disk.
      * @return A list of all nodes in the tree
      * @throws RocksDBException If there's an error accessing RocksDB
@@ -864,6 +815,72 @@ public class MerkleTree {
         }
     }
 
+    public List<byte[]> getAllData() {
+        lock.readLock().lock();
+        try {
+            List<byte[]> data = new ArrayList<>();
+            try (RocksIterator iterator = db.newIterator(keyDataHandle)) {
+                iterator.seekToFirst();
+                while (iterator.isValid()) {
+                    data.add(iterator.value());
+                    iterator.next();
+                }
+            }
+            return data;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Flush all in-memory changes (nodes, metadata) to RocksDB.
+     */
+    public void flushToDisk() throws RocksDBException {
+        lock.writeLock().lock();
+        try {
+            try (WriteBatch batch = new WriteBatch()) {
+                if (rootHash != null) {
+                    batch.put(metaDataHandle, KEY_ROOT_HASH.getBytes(), rootHash);
+                }
+                batch.put(metaDataHandle, KEY_NUM_LEAVES.getBytes(), ByteBuffer.allocate(4).putInt(numLeaves).array());
+                batch.put(metaDataHandle, KEY_DEPTH.getBytes(), ByteBuffer.allocate(4).putInt(depth).array());
+
+                for (Map.Entry<Integer, Node> entry : hangingNodes.entrySet()) {
+                    Integer level = entry.getKey();
+                    Node node = entry.getValue();
+                    batch.put(metaDataHandle, (KEY_HANGING_NODE_PREFIX + level).getBytes(), node.hash);
+                }
+
+                for (Node node : nodesCache.values()) {
+                    batch.put(nodesHandle, node.hash, node.encode());
+
+                    if (node.getNodeHashToRemoveFromDb() != null) {
+                        batch.delete(nodesHandle, node.getNodeHashToRemoveFromDb());
+                    }
+                }
+
+                for(Map.Entry<ByteArrayWrapper, byte[]> entry : keyDataCache.entrySet()) {
+                    batch.put(keyDataHandle, entry.getKey().data(), entry.getValue());
+                }
+
+                try (WriteOptions writeOptions = new WriteOptions()) {
+                    db.write(writeOptions, batch);
+                }
+
+                nodesCache.clear();
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Get the current root hash of the Merkle tree.
+     */
+    public byte[] getRootHash() {
+        return rootHash;
+    }
+
     /**
      * Close the databases (optional, if you need cleanup).
      */
@@ -907,6 +924,139 @@ public class MerkleTree {
 
             openTrees.remove(treeName);
             closed = true;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Efficiently clears the entire MerkleTree by closing, deleting and recreating the RocksDB instance.
+     * This is much faster than iterating through all entries and deleting them individually.
+     */
+    /**
+     * Efficiently clears the entire MerkleTree by closing, deleting and recreating the RocksDB instance.
+     * This is much faster than iterating through all entries and deleting them individually.
+     */
+    public void clear() {
+        lock.writeLock().lock();
+        try {
+            // First close the current DB
+            if (!closed) {
+                // Close all column family handles
+                if (metaDataHandle != null) {
+                    try {
+                        metaDataHandle.close();
+                    } catch (Exception e) {
+                        // Log error but continue
+                    }
+                    metaDataHandle = null;
+                }
+
+                if (nodesHandle != null) {
+                    try {
+                        nodesHandle.close();
+                    } catch (Exception e) {
+                        // Log error but continue
+                    }
+                    nodesHandle = null;
+                }
+
+                if (keyDataHandle != null) {
+                    try {
+                        keyDataHandle.close();
+                    } catch (Exception e) {
+                        // Log error but continue
+                    }
+                    keyDataHandle = null;
+                }
+
+                if (db != null) {
+                    try {
+                        db.close();
+                    } catch (Exception e) {
+                        // Log error but continue
+                    }
+                }
+            }
+
+            // Clear in-memory structures
+            nodesCache.clear();
+            hangingNodes.clear();
+            keyDataCache.clear();
+            rootHash = null;
+            numLeaves = 0;
+            depth = 0;
+
+            // Delete the directory
+            File treeDir = new File("merkleTree/" + treeName);
+            deleteDirectory(treeDir);
+
+            // Re-open a fresh DB
+            try {
+                // Ensure directory exists
+                if (!treeDir.exists() && !treeDir.mkdirs()) {
+                    throw new RocksDBException("Failed to create directory: " + treeDir.getPath());
+                }
+
+                // Configure DB options
+                DBOptions dbOptions = new DBOptions()
+                        .setCreateIfMissing(true)
+                        .setCreateMissingColumnFamilies(true)
+                        .setParanoidChecks(true)
+                        .setUseDirectReads(true)
+                        .setUseDirectIoForFlushAndCompaction(true);
+
+                // Re-apply all the options from the constructor
+                dbOptions.setMaxTotalWalSize(45 * 1024 * 1024L)
+                        .setWalSizeLimitMB(15)
+                        .setWalTtlSeconds(24 * 60 * 60)
+                        .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL)
+                        .setDbLogDir("")
+                        .setLogFileTimeToRoll(0);
+
+                dbOptions.setAllowMmapReads(false)
+                        .setAllowMmapWrites(false)
+                        .setMaxOpenFiles(1000)
+                        .setMaxFileOpeningThreads(10);
+
+                dbOptions.setEnableWriteThreadAdaptiveYield(true)
+                        .setAllowConcurrentMemtableWrite(true);
+
+                // Configure column family options
+                ColumnFamilyOptions cfOptions = new ColumnFamilyOptions()
+                        .optimizeUniversalStyleCompaction()
+                        .setWriteBufferSize(64 * 1024 * 1024L)
+                        .setMaxWriteBufferNumber(3);
+
+                // Prepare column families
+                List<ColumnFamilyDescriptor> cfDescriptors = new ArrayList<>();
+                List<ColumnFamilyHandle> cfHandles = new ArrayList<>();
+
+                // Always need default CF
+                cfDescriptors.add(new ColumnFamilyDescriptor(
+                        RocksDB.DEFAULT_COLUMN_FAMILY, cfOptions));
+
+                // Our custom CFs
+                cfDescriptors.add(new ColumnFamilyDescriptor(
+                        METADATA_DB_NAME.getBytes(), cfOptions));
+                cfDescriptors.add(new ColumnFamilyDescriptor(
+                        NODES_DB_NAME.getBytes(), cfOptions));
+                cfDescriptors.add(new ColumnFamilyDescriptor(
+                        KEY_DATA_DB_NAME.getBytes(), cfOptions));
+
+                // Open a fresh DB with all column families
+                this.db = RocksDB.open(dbOptions, treeDir.getPath(), cfDescriptors, cfHandles);
+
+                // Assign handles
+                this.metaDataHandle = cfHandles.get(1);
+                this.nodesHandle = cfHandles.get(2);
+                this.keyDataHandle = cfHandles.get(3);
+
+                // Reset closed flag
+                closed = false;
+            } catch (RocksDBException e) {
+                throw new RuntimeException("Failed to re-initialize RocksDB after clearing: " + e.getMessage(), e);
+            }
         } finally {
             lock.writeLock().unlock();
         }
