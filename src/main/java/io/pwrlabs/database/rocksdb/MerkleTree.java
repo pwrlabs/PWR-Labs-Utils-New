@@ -835,6 +835,21 @@ public class MerkleTree {
         }
     }
 
+    public boolean containsKey(byte[] key) {
+        if (key == null) {
+            throw new IllegalArgumentException("Key cannot be null");
+        }
+
+        lock.readLock().lock();
+        try {
+            return db.get(keyDataHandle, key) != null;
+        } catch (RocksDBException e) {
+            throw new RuntimeException(e);
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
     /**
      * Close the databases (optional, if you need cleanup).
      */
