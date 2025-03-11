@@ -709,6 +709,7 @@ public class MerkleTree {
             return;
         }
         lock.writeLock().lock();
+        sourceTree.lock.writeLock().lock();
         try {
             flushToDisk();
 
@@ -831,6 +832,7 @@ public class MerkleTree {
             // Clear the cache and reload from disk
             nodesCache.clear();
         } finally {
+            sourceTree.lock.writeLock().unlock();
             lock.writeLock().unlock();
         }
     }
@@ -1448,6 +1450,16 @@ public class MerkleTree {
                 return false;
             } else if(this.right != null && other.right != null) {
                 if(!Arrays.equals(this.right, other.right)) {
+                    return false;
+                }
+            }
+
+            if(this.parent == null && other.parent != null) {
+                return false;
+            } else if(this.parent != null && other.parent == null) {
+                return false;
+            } else if(this.parent != null && other.parent != null) {
+                if(!Arrays.equals(this.parent, other.parent)) {
                     return false;
                 }
             }
