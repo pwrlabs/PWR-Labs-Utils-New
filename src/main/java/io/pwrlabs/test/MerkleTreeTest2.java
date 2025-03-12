@@ -179,7 +179,7 @@ public class MerkleTreeTest2 {
                 targetTree.addLeaf(targetTree.new Node(targetLeaf1Hash));
                 targetTree.flushToDisk();
 
-                targetTree.updateWithTree(sourceTree);
+              //  targetTree.updateWithTree(sourceTree);
 
                 assertArrayEquals(sourceTree.getRootHash(), targetTree.getRootHash(), "Root hashes should match after update");
                 assertEquals(sourceTree.getNumLeaves(), targetTree.getNumLeaves(), "numLeaves should be " + sourceTree.getNumLeaves() + " after update");

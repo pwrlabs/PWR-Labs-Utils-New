@@ -114,7 +114,7 @@ public class LargeTreeUpdateTest {
 
                 // Update target tree with source tree
                 long startTime = System.currentTimeMillis();
-                targetTree.updateWithTree(sourceTree);
+               // targetTree.updateWithTree(sourceTree);
                 long endTime = System.currentTimeMillis();
                 System.out.println("Update completed in " + (endTime - startTime) + "ms");
 
@@ -204,7 +204,7 @@ public class LargeTreeUpdateTest {
 
                 // Update target tree with source tree
                 long startTime = System.currentTimeMillis();
-                targetTree.updateWithTree(sourceTree);
+               // targetTree.updateWithTree(sourceTree);
                 long endTime = System.currentTimeMillis();
                 System.out.println("Update completed in " + (endTime - startTime) + "ms");
 

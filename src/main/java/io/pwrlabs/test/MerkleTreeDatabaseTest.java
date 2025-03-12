@@ -131,7 +131,7 @@ public class MerkleTreeDatabaseTest {
             MerkleTree targetTree = new MerkleTree("targetTreeWithData");
             try {
                 // Update target tree with source tree
-                targetTree.updateWithTree(sourceTree);
+              //  targetTree.updateWithTree(sourceTree);
                 
                 // Verify data was copied
                 for (int i = 1; i <= 10; i++) {
@@ -175,7 +175,7 @@ public class MerkleTreeDatabaseTest {
                 }
                 
                 // Update target tree with source tree
-                targetTree.updateWithTree(sourceTree);
+              //  targetTree.updateWithTree(sourceTree);
                 
                 // Verify data was copied
                 for (int i = 1; i <= 45; i++) {
