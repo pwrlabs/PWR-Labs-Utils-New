@@ -657,10 +657,6 @@ public class MerkleTree {
         try {
             //clear old metadata from disk
             try (WriteBatch batch = new WriteBatch()) {
-                batch.delete(metaDataHandle, KEY_ROOT_HASH.getBytes());
-                batch.delete(metaDataHandle, KEY_NUM_LEAVES.getBytes());
-                batch.delete(metaDataHandle, KEY_DEPTH.getBytes());
-
                 try (RocksIterator iterator = db.newIterator(metaDataHandle)) {
                     iterator.seekToFirst();
                     while (iterator.isValid()) {
@@ -1162,7 +1158,7 @@ public class MerkleTree {
                 //New hashes don't have copies in db since they haven't been flushed to disk yet
                 if (nodeHashToRemoveFromDb == null) nodeHashToRemoveFromDb = this.hash;
 
-                byte[] oldHash = this.hash;
+                byte[] oldHash = Arrays.copyOf(this.hash, this.hash.length);
                 this.hash = newHash;
 
                 for(Map.Entry<Integer, byte[]> entry : hangingNodes.entrySet()) {
