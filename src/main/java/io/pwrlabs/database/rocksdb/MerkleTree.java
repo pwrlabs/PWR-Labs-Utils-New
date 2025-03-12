@@ -655,8 +655,8 @@ public class MerkleTree {
     public void flushToDisk() throws RocksDBException {
         lock.writeLock().lock();
         try {
-            //clear old metadata from disk
             try (WriteBatch batch = new WriteBatch()) {
+                //Clear old metadata from disk
                 try (RocksIterator iterator = db.newIterator(metaDataHandle)) {
                     iterator.seekToFirst();
                     while (iterator.isValid()) {
@@ -665,14 +665,6 @@ public class MerkleTree {
                     }
                 }
 
-                if (batch.count() > 0) {
-                    try (WriteOptions writeOptions = new WriteOptions()) {
-                        db.write(writeOptions, batch);
-                    }
-                }
-            }
-
-            try (WriteBatch batch = new WriteBatch()) {
                 if (rootHash != null) {
                     batch.put(metaDataHandle, KEY_ROOT_HASH.getBytes(), rootHash);
                 }
@@ -955,6 +947,7 @@ public class MerkleTree {
                     : ByteBuffer.wrap(depthBytes).getInt();
 
             // Load any hangingNodes from metadata
+            hangingNodes.clear();
             for (int i = 0; i <= depth; i++) {
                 byte[] hash = db.get(metaDataHandle, (KEY_HANGING_NODE_PREFIX + i).getBytes());
                 if (hash != null) {
