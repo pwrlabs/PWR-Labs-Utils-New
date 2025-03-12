@@ -900,6 +900,8 @@ public class MerkleTree {
 
         lock.writeLock().lock();
         try {
+            flushToDisk();
+
             File origDir = new File(path);
             File destDir = new File("merkleTree/" + newTreeName);
             try (Checkpoint checkpoint = Checkpoint.create(db)) {
