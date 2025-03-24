@@ -76,7 +76,10 @@ public class BinaryJSON {
 
         key = key.toLowerCase();
 
-        errorIf(mappedKeysOnly && !BinaryJSONKeyMapper.containsKey(key), "Key not found in key mapper");
+        if(mappedKeysOnly) {
+            Short keyId = BinaryJSONKeyMapper.getId(key);
+            errorIf(keyId == null, "Key not found in key mapper. Closest key: " + BinaryJSONKeyMapper.closestMatch(key));
+        }
 
         keyValueMap.put(key, value);
     }
