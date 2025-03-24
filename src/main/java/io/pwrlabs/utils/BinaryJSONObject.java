@@ -1,27 +1,25 @@
 package io.pwrlabs.utils;
 
-import io.pwrlabs.util.encoders.ByteArrayWrapper;
 import io.pwrlabs.util.encoders.Hex;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static io.pwrlabs.newerror.NewError.errorIf;
 
-public class BinaryJSON {
+public class BinaryJSONObject {
     private final Map<String /*Key*/, Object /*Value*/> keyValueMap = new ConcurrentHashMap<>();
     private final boolean mappedKeysOnly;
 
-    public BinaryJSON(boolean mappedKeysOnly) {
+    public BinaryJSONObject(boolean mappedKeysOnly) {
         this.mappedKeysOnly = mappedKeysOnly;
     }
 
-    public BinaryJSON(byte[] data) {
+    public BinaryJSONObject(byte[] data) {
         ByteBuffer buffer = ByteBuffer.wrap(data);
         mappedKeysOnly = buffer.get() == 1;
 
@@ -63,6 +61,18 @@ public class BinaryJSON {
                     byte[] valueBytes2 = new byte[valueLength2];
                     buffer.get(valueBytes2);
                     keyValueMap.put(keyStr, valueBytes2);
+                    break;
+                case 7: //BinaryJSONArray
+                    int valueLength3 = buffer.getInt();
+                    byte[] valueBytes3 = new byte[valueLength3];
+                    buffer.get(valueBytes3);
+                    keyValueMap.put(keyStr, new BinaryJSONArray(valueBytes3));
+                    break;
+                case 8: //BinaryJSONObject
+                    int valueLength4 = buffer.getInt();
+                    byte[] valueBytes4 = new byte[valueLength4];
+                    buffer.get(valueBytes4);
+                    keyValueMap.put(keyStr, new BinaryJSONObject(valueBytes4));
                     break;
                 default:
                     throw new IllegalArgumentException("Unsupported value type");
@@ -165,7 +175,19 @@ public class BinaryJSON {
                 byte[] valueBytes = (byte[]) value;
                 bos.write(ByteBuffer.allocate(4).putInt(valueBytes.length).array());
                 bos.write(valueBytes);
-            } else {
+            } else if (value instanceof BinaryJSONArray) {
+                bos.write(7); // Type
+                byte[] valueBytes = ((BinaryJSONArray) value).toByteArray();
+                bos.write(ByteBuffer.allocate(4).putInt(valueBytes.length).array());
+                bos.write(valueBytes);
+            } else if (value instanceof BinaryJSONObject) {
+                bos.write(8); // Type
+                byte[] valueBytes = ((BinaryJSONObject) value).toByteArray();
+                bos.write(ByteBuffer.allocate(4).putInt(valueBytes.length).array());
+                bos.write(valueBytes);
+            }
+
+            else {
                 throw new IllegalArgumentException("Unsupported value type");
             }
         }
@@ -173,12 +195,16 @@ public class BinaryJSON {
         return bos.toByteArray();
     }
 
-    public JSONObject toJson() {
+    public JSONObject toJsonObject() {
         JSONObject jsonObject = new JSONObject();
 
         for (Map.Entry<String, Object> entry : keyValueMap.entrySet()) {
             if(entry.getValue() instanceof byte[]) {
                 jsonObject.put(entry.getKey(), Hex.toHexString((byte[]) entry.getValue()));
+            } else if(entry.getValue() instanceof BinaryJSONObject) {
+                jsonObject.put(entry.getKey(), ((BinaryJSONObject) entry.getValue()).toJsonObject());
+            } else if(entry.getValue() instanceof BinaryJSONArray) {
+                jsonObject.put(entry.getKey(), ((BinaryJSONArray) entry.getValue()).toJsonArray());
             } else {
                 jsonObject.put(entry.getKey(), entry.getValue());
             }

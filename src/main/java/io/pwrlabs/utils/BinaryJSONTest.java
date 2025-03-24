@@ -34,7 +34,7 @@ public class BinaryJSONTest {
         System.out.println("Testing basic functionality...");
 
         // Test with mappedKeysOnly = false which allows any keys
-        BinaryJSON json = new BinaryJSON(false);
+        BinaryJSONObject json = new BinaryJSONObject(false);
         json.putInt("testint", 42);
         assert json.getInt("testint") == 42 : "Failed to get int value";
 
@@ -47,7 +47,7 @@ public class BinaryJSONTest {
     private static void testDataTypes() {
         System.out.println("Testing different data types...");
 
-        BinaryJSON json = new BinaryJSON(false);
+        BinaryJSONObject json = new BinaryJSONObject(false);
 
         // Test int
         json.putInt("testint", 42);
@@ -81,7 +81,7 @@ public class BinaryJSONTest {
         System.out.println("Testing serialization and deserialization...");
 
         // Create and populate original JSON
-        BinaryJSON original = new BinaryJSON(false);
+        BinaryJSONObject original = new BinaryJSONObject(false);
         original.putInt("testint", 42);
         original.putLong("testlong", 1234567890123L);
         original.put("teststring", "Hello, World!");
@@ -94,7 +94,7 @@ public class BinaryJSONTest {
         byte[] serialized = original.toByteArray();
 
         // Deserialize back to BinaryJSON
-        BinaryJSON deserialized = new BinaryJSON(serialized);
+        BinaryJSONObject deserialized = new BinaryJSONObject(serialized);
 
         // Verify all values match
         assert deserialized.getInt("testint") == 42 : "Int value changed after serialization";
@@ -110,14 +110,14 @@ public class BinaryJSONTest {
     private static void testJsonConversion() {
         System.out.println("Testing JSON conversion...");
 
-        BinaryJSON json = new BinaryJSON(false);
+        BinaryJSONObject json = new BinaryJSONObject(false);
         json.putInt("testint", 42);
         json.putLong("testlong", 1234567890123L);
         json.put("teststring", "Hello, World!");
         byte[] testBytes = {1, 2, 3, 4, 5};
         json.put("testbytes", testBytes);
 
-        JSONObject jsonObj = json.toJson();
+        JSONObject jsonObj = json.toJsonObject();
 
         assert jsonObj.getInt("testint") == 42 : "Int value not correctly converted to JSON";
         assert jsonObj.getLong("testlong") == 1234567890123L : "Long value not correctly converted to JSON";
@@ -134,7 +134,7 @@ public class BinaryJSONTest {
         System.out.println("Testing error cases...");
 
         // Test key length <= 2
-        BinaryJSON json = new BinaryJSON(false);
+        BinaryJSONObject json = new BinaryJSONObject(false);
         boolean exceptionThrown = false;
         try {
             json.put("ab", "value"); // 2-byte key
@@ -146,7 +146,7 @@ public class BinaryJSONTest {
         assert exceptionThrown : "Exception not thrown for key length <= 2";
 
         // Test accessing non-existent key
-        json = new BinaryJSON(false);
+        json = new BinaryJSONObject(false);
         Object nullValue = json.get("nonexistent");
         assert nullValue == null : "Non-existent key should return null";
 
@@ -161,7 +161,7 @@ public class BinaryJSONTest {
         assert exceptionThrown : "Exception not thrown for non-existent key when getting as int";
 
         // Test type mismatches
-        json = new BinaryJSON(false);
+        json = new BinaryJSONObject(false);
         json.put("teststring", "Not an int");
         exceptionThrown = false;
         try {
@@ -191,12 +191,12 @@ public class BinaryJSONTest {
         System.out.println("Testing edge cases...");
 
         // Test empty BinaryJSON
-        BinaryJSON emptyJson = new BinaryJSON(false);
+        BinaryJSONObject emptyJson = new BinaryJSONObject(false);
         byte[] serialized = emptyJson.toByteArray();
         assert serialized.length == 0 : "Serialized empty BinaryJSON should have length 0";
 
         // Test large string
-        BinaryJSON json = new BinaryJSON(false);
+        BinaryJSONObject json = new BinaryJSONObject(false);
         StringBuilder largeString = new StringBuilder();
         for (int i = 0; i < 10000; i++) {
             largeString.append("a");
@@ -205,7 +205,7 @@ public class BinaryJSONTest {
         assert json.get("testlargestring").equals(largeString.toString()) : "Large string not stored correctly";
 
         // Test various integer values
-        json = new BinaryJSON(false);
+        json = new BinaryJSONObject(false);
         json.putInt("minint", Integer.MIN_VALUE);
         json.putInt("maxint", Integer.MAX_VALUE);
         json.putInt("zeroint", 0);
@@ -217,7 +217,7 @@ public class BinaryJSONTest {
         assert json.getInt("negint") == -42 : "Negative int value not stored correctly";
 
         // Test various long values
-        json = new BinaryJSON(false);
+        json = new BinaryJSONObject(false);
         json.putLong("minlong", Long.MIN_VALUE);
         json.putLong("maxlong", Long.MAX_VALUE);
         json.putLong("zerolong", 0L);
@@ -229,12 +229,12 @@ public class BinaryJSONTest {
         assert json.getLong("neglong") == -42L : "Negative long value not stored correctly";
 
         // Test serialization with many values
-        json = new BinaryJSON(false);
+        json = new BinaryJSONObject(false);
         for (int i = 0; i < 100; i++) {
             json.putInt("testint" + i, i);
         }
         byte[] manyValuesSerialized = json.toByteArray();
-        BinaryJSON manyValuesDeserialized = new BinaryJSON(manyValuesSerialized);
+        BinaryJSONObject manyValuesDeserialized = new BinaryJSONObject(manyValuesSerialized);
         for (int i = 0; i < 100; i++) {
             assert manyValuesDeserialized.getInt("testint" + i) == i :
                     "Value at index " + i + " not correctly serialized/deserialized";
@@ -242,7 +242,7 @@ public class BinaryJSONTest {
 
         System.out.println("Edge cases tests passed.");
 
-        System.out.println(json.toJson());
+        System.out.println(json.toJsonObject());
     }
 
     private static void testMappedKeysOnlyMode() {
@@ -251,7 +251,7 @@ public class BinaryJSONTest {
         try {
             // This test is conditional on the availability of mapped keys in BinaryJSONKeyMapper
             // First check if any mapped keys exist that we can use
-            BinaryJSON mappedJson = new BinaryJSON(true);
+            BinaryJSONObject mappedJson = new BinaryJSONObject(true);
 
             // Try to test with a common key that might be present in the mapper
             // If not, this will throw an exception which we'll catch
@@ -277,7 +277,7 @@ public class BinaryJSONTest {
             }
 
             // Test serialization/deserialization of the mappedKeysOnly flag
-            BinaryJSON emptyMappedJson = new BinaryJSON(true);
+            BinaryJSONObject emptyMappedJson = new BinaryJSONObject(true);
             byte[] serialized = new byte[1]; // Just the flag byte
             try {
                 serialized = emptyMappedJson.toByteArray();
@@ -288,7 +288,7 @@ public class BinaryJSONTest {
             if (serialized.length > 0) {
                 assert serialized[0] == 1 : "mappedKeysOnly flag not correctly serialized";
 
-                BinaryJSON deserialized = new BinaryJSON(serialized);
+                BinaryJSONObject deserialized = new BinaryJSONObject(serialized);
                 // We can't directly check if mappedKeysOnly is true in the deserialized object
                 // since it's a private field, but we can test its behavior
 
