@@ -1,5 +1,6 @@
 package io.pwrlabs.utils;
 
+import java.security.PublicKey;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -160,6 +161,7 @@ public class BinaryJSONKeyMapper {
     public static final String VIDA_CONDUIT_POWERS = "vidaConduitPowers";
     public static final String IS_PRIVATE = "isPrivate";
     public static final String PUBLIC_KEY = "publicKey";
+    public static final String WITHDRAWN_PWR = "withdrawnPWR";
 
     //endregion
 
@@ -215,5 +217,6 @@ public class BinaryJSONKeyMapper {
         addKey(VIDA_CONDUIT_POWERS);
         addKey(IS_PRIVATE);
         addKey(PUBLIC_KEY);
+        addKey(WITHDRAWN_PWR);
     }
 }
