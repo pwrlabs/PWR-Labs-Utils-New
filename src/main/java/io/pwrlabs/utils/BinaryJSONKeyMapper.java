@@ -122,6 +122,9 @@ public class BinaryJSONKeyMapper {
     public static final String PAID_TOTAL_FEE = "paidTotalFee";
     public static final String SUCCESS = "success";
     public static final String ERROR_MESSAGE = "errorMessage";
+    public static final String POSITION_IN_BLOCK = "positionInBlock";
+    public static final String WRAPPED = "wrapped";
+    public static final String POSITION_IN_WRAPPED_TXN = "positionInWrappedTxn";
 
     public static final String BLOCK_NUMBER = "blockNumber";
     public static final String TIME_STAMP = "timeStamp";
@@ -178,6 +181,10 @@ public class BinaryJSONKeyMapper {
         addKey(PAID_TOTAL_FEE);
         addKey(SUCCESS);
         addKey(ERROR_MESSAGE);
+        addKey(POSITION_IN_BLOCK);
+        addKey(WRAPPED);
+        addKey(POSITION_IN_WRAPPED_TXN);
+
 
         addKey(BLOCK_NUMBER);
         addKey(TIME_STAMP);
