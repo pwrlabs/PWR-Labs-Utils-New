@@ -135,7 +135,6 @@ public class BinaryJSONKeyMapper {
     public static final String PREVIOUS_BLOCK_HASH = "previousBlockHash";
     public static final String BLOCKCHAIN_VERSION = "blockchainVersion";
     public static final String BLOCK_REWARD = "blockReward";
-    public static final String BLOCK_SIZE = "blockSize";
 
     public static final String TITLE = "title";
     public static final String DESCRIPTION = "description";
