@@ -197,7 +197,6 @@ public class BinaryJSONKeyMapper {
         addKey(PREVIOUS_BLOCK_HASH);
         addKey(BLOCKCHAIN_VERSION);
         addKey(BLOCK_REWARD);
-        addKey(BLOCK_SIZE);
 
         addKey(TITLE);
         addKey(DESCRIPTION);
