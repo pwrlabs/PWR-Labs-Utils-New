@@ -125,6 +125,7 @@ public class BinaryJSONKeyMapper {
     public static final String POSITION_IN_BLOCK = "positionInBlock";
     public static final String WRAPPED = "wrapped";
     public static final String POSITION_IN_WRAPPED_TXN = "positionInWrappedTxn";
+    public static final String SIZE = "size";
 
     public static final String BLOCK_NUMBER = "blockNumber";
     public static final String TIME_STAMP = "timeStamp";
@@ -185,6 +186,7 @@ public class BinaryJSONKeyMapper {
         addKey(POSITION_IN_BLOCK);
         addKey(WRAPPED);
         addKey(POSITION_IN_WRAPPED_TXN);
+        addKey(SIZE);
 
 
         addKey(BLOCK_NUMBER);
