@@ -927,6 +927,7 @@ public class MerkleTree {
                 }
             }
 
+            nodesCache.put(new ByteArrayWrapper(leafNode.hash), leafNode);
             numLeaves++;
         } finally {
             lock.writeLock().unlock();
