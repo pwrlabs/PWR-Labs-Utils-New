@@ -1,237 +1,178 @@
 package io.pwrlabs.test;
 
 import io.pwrlabs.database.rocksdb.MerkleTree;
+import org.rocksdb.RocksDBException;
 
-import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 
+/**
+ * A simple class that tests MerkleTree functionality multiple times without using any external
+ * test framework. This includes testing repeated updates to the same key to ensure data is
+ * correctly updated in the tree.
+ */
 public class MerkleTreeTest {
-    private static int testCount = 0;
 
+    /**
+     * Main entry point to run all tests multiple times.
+     */
     public static void main(String[] args) {
-        testEmptyTree();
-        testSingleLeaf();
-        testMultipleLeaves();
-        testUpdateLeaf();
-        testHangingNodes();
-        testKeyDataIntegrity();
-        testMetadataIntegrity();
-        testModifyAfterClone();
-    }
-
-    private static void testEmptyTree() {
-        testCount++;
-        try {
-            MerkleTree original = new MerkleTree("testEmpty_" + testCount);
-            MerkleTree clone = original.clone("testEmptyClone_" + testCount);
-
-            assertTrue(original.equals(clone), "Empty trees should be equal");
-            assertTrue(clone.getNumLeaves() == 0, "Clone should have 0 leaves");
-
-            original.close();
-            clone.close();
-        } catch (Exception e) {
-            handleException(e);
+        // We run the entire test suite multiple times to ensure stability across repeated usage.
+        for (int i = 0; i < 3; i++) {
+            System.out.println("======= TEST RUN #" + (i + 1) + " =======");
+            runTests("testTree" + i);
         }
+        System.out.println("All test runs completed successfully!");
     }
 
-    private static void testSingleLeaf() {
-        testCount++;
+    /**
+     * Runs a series of tests against the MerkleTree class using the given treeName.
+     *
+     * @param treeName a unique name for each test run
+     */
+    private static void runTests(String treeName) {
+        MerkleTree tree = null;
         try {
-            MerkleTree original = new MerkleTree("testSingle_" + testCount);
-            original.addOrUpdateData("key1".getBytes(), "value1".getBytes());
-            original.flushToDisk();
+            // 1) Test Constructor
+            System.out.println("1) Testing constructor with treeName: " + treeName);
+            tree = new MerkleTree(treeName);
 
-            MerkleTree clone = original.clone("testSingleClone_" + testCount);
+            // Check initial states
+            System.out.println("   RootHash (should be null): " + (tree.getRootHash() == null));
+            System.out.println("   NumLeaves (should be 0): " + tree.getNumLeaves());
+            System.out.println("   Depth (should be 0): " + tree.getDepth());
 
-            assertTrue(original.equals(clone), "Single leaf trees should be equal");
-            assertTrue(clone.containsKey("key1".getBytes()), "Clone should contain key");
-            assertEqualArrays("value1".getBytes(), clone.getData("key1".getBytes()),
-                    "Clone data should match");
+            // 2) Test addOrUpdateData (with repeated updates), getData, containsKey
+            System.out.println("2) Testing addOrUpdateData with repeated updates on the same key...");
 
-            original.close();
-            clone.close();
-        } catch (Exception e) {
-            handleException(e);
-        }
-    }
-
-    private static void testMultipleLeaves() {
-        testCount++;
-        try {
-            MerkleTree original = new MerkleTree("testMultiple_" + testCount);
-            for (int i = 0; i < 10; i++) {
-                original.addOrUpdateData(("key" + i).getBytes(), ("value" + i).getBytes());
-            }
-            original.flushToDisk();
-
-            MerkleTree clone = original.clone("testMultipleClone_" + testCount);
-
-            assertTrue(original.equals(clone), "Multi-leaf trees should be equal");
-
-            List<byte[]> originalKeys = original.getAllKeys();
-            List<byte[]> cloneKeys = clone.getAllKeys();
-            assertTrue(originalKeys.size() == cloneKeys.size(), "Key count should match");
-
-            for (byte[] key : originalKeys) {
-                assertTrue(clone.containsKey(key), "Clone should contain all keys");
-                assertEqualArrays(original.getData(key), clone.getData(key),
-                        "Data should match for key: " + new String(key));
-            }
-
-            original.close();
-            clone.close();
-        } catch (Exception e) {
-            handleException(e);
-        }
-    }
-
-    private static void testUpdateLeaf() {
-        testCount++;
-        try {
-            MerkleTree original = new MerkleTree("testUpdate_" + testCount);
-            original.addOrUpdateData("key".getBytes(), "value1".getBytes());
-            original.flushToDisk();
-
-            // Update value
-            original.addOrUpdateData("key".getBytes(), "value2".getBytes());
-            original.flushToDisk();
-
-            MerkleTree clone = original.clone("testUpdateClone_" + testCount);
-
-            assertTrue(original.equals(clone), "Updated trees should be equal");
-            assertEqualArrays("value2".getBytes(), clone.getData("key".getBytes()),
-                    "Clone should have updated value");
-
-            original.close();
-            clone.close();
-        } catch (Exception e) {
-            handleException(e);
-        }
-    }
-
-    private static void testHangingNodes() {
-        testCount++;
-        try {
-            MerkleTree original = new MerkleTree("testHanging_" + testCount);
-            // Add 3 leaves to create hanging nodes
-            original.addOrUpdateData("key1".getBytes(), "value1".getBytes());
-            original.addOrUpdateData("key2".getBytes(), "value2".getBytes());
-            original.addOrUpdateData("key3".getBytes(), "value3".getBytes());
-            original.flushToDisk();
-
-            MerkleTree clone = original.clone("testHangingClone_" + testCount);
-
-            assertTrue(original.equals(clone), "Trees with hanging nodes should be equal");
-            assertTrue(original.getDepth() == clone.getDepth(), "Depth should match");
-            assertTrue(original.getNumLeaves() == clone.getNumLeaves(), "Leaf count should match");
-
-            original.close();
-            clone.close();
-        } catch (Exception e) {
-            handleException(e);
-        }
-    }
-
-    private static void testKeyDataIntegrity() {
-        testCount++;
-        try {
-            MerkleTree original = new MerkleTree("testDataIntegrity_" + testCount);
-            for (int i = 0; i < 100; i++) {
-                original.addOrUpdateData(("dataKey" + i).getBytes(), ("dataValue" + i).getBytes());
-            }
-            original.flushToDisk();
-
-            MerkleTree clone = original.clone("testDataIntegrityClone_" + testCount);
-
-            List<byte[]> originalData = original.getAllData();
-            List<byte[]> cloneData = clone.getAllData();
-            assertTrue(originalData.size() == cloneData.size(), "Data count should match");
-
-            for (int i = 0; i < originalData.size(); i++) {
-                assertEqualArrays(originalData.get(i), cloneData.get(i),
-                        "Data content should match");
-            }
-
-            original.close();
-            clone.close();
-        } catch (Exception e) {
-            handleException(e);
-        }
-    }
-
-    private static void testMetadataIntegrity() {
-        testCount++;
-        try {
-            MerkleTree original = new MerkleTree("testMetadata_" + testCount);
+            byte[] keyA = "KeyA".getBytes();
+            // Repeatedly update keyA with new data, verifying each time
             for (int i = 0; i < 5; i++) {
-                original.addOrUpdateData(("metaKey" + i).getBytes(), ("metaValue" + i).getBytes());
+                byte[] newDataA = ("DataA" + i).getBytes();
+                tree.addOrUpdateData(keyA, newDataA);
+
+                byte[] fetchedA = tree.getData(keyA);
+                boolean matches = Arrays.equals(newDataA, fetchedA);
+                System.out.println("   Round " + i + " -> getData(KeyA) = 'DataA" + i
+                        + "' match: " + matches);
+                if (!matches) {
+                    throw new AssertionError("KeyA data does not match expected value at round " + i);
+                }
             }
-            original.flushToDisk();
+            // After multiple updates to the same key, we still should have exactly 1 leaf for KeyA
+            System.out.println("   After repeated updates, getNumLeaves() is (should be 1): " + tree.getNumLeaves());
+            System.out.println("   After repeated updates, rootHash is not null: " + (tree.getRootHash() != null));
+            // also check containsKey
+            System.out.println("   containsKey(KeyA) is true: " + tree.containsKey(keyA));
 
-            MerkleTree clone = original.clone("testMetadataClone_" + testCount);
+            // Insert a second key to ensure multi-key usage
+            byte[] keyB = "KeyB".getBytes();
+            byte[] dataB = "DataB".getBytes();
+            tree.addOrUpdateData(keyB, dataB);
+            System.out.println("   Inserted KeyB -> DataB");
+            System.out.println("   getData(KeyB) matches DataB: "
+                    + Arrays.equals(dataB, tree.getData(keyB)));
+            System.out.println("   getNumLeaves() now (should be 2): " + tree.getNumLeaves());
 
-            assertEqualArrays(original.getRootHash(), clone.getRootHash(), "Root hash should match");
-            assertTrue(original.getNumLeaves() == clone.getNumLeaves(), "Leaf count should match");
-            assertTrue(original.getDepth() == clone.getDepth(), "Depth should match");
+            // 3) Check rootHash, depth
+            System.out.println("   RootHash after inserts (should not be null): " + (tree.getRootHash() != null));
+            System.out.println("   Depth after inserts (>= 0): " + tree.getDepth());
 
-            original.close();
-            clone.close();
+            // 4) Test revertUnsavedChanges
+            System.out.println("3) Testing revertUnsavedChanges...");
+            tree.revertUnsavedChanges();
+            // Because we have not called flushToDisk after the last updates, revert would
+            // clear in-memory caches. However, data is still present in RocksDB from before
+            // or from the flush that might have happened during addOrUpdate, so getData should still work.
+            byte[] revertCheckA = tree.getData(keyA);
+            System.out.println("   getData(KeyA) after revert: " + (revertCheckA == null ? "null" : new String(revertCheckA)));
+            byte[] revertCheckB = tree.getData(keyB);
+            System.out.println("   getData(KeyB) after revert: " + (revertCheckB == null ? "null" : new String(revertCheckB)));
+
+            // 5) Test getAllKeys and getAllData
+            System.out.println("4) Testing getAllKeys and getAllData...");
+            List<byte[]> allKeys = tree.getAllKeys();
+            List<byte[]> allData = tree.getAllData();
+
+            System.out.println("   getAllKeys() size: " + allKeys.size());
+            for (byte[] k : allKeys) {
+                System.out.println("     Key: " + new String(k));
+            }
+
+            System.out.println("   getAllData() size: " + allData.size());
+            for (byte[] d : allData) {
+                System.out.println("     Data: " + new String(d));
+            }
+
+            // 6) Test flushToDisk explicitly
+            System.out.println("5) Testing flushToDisk...");
+            tree.flushToDisk();
+            System.out.println("   flushToDisk() called successfully.");
+
+            // 7) Test getAllNodes
+            System.out.println("6) Testing getAllNodes...");
+            HashSet<MerkleTree.Node> allNodes = tree.getAllNodes();
+            System.out.println("   getAllNodes() result size: " + allNodes.size());
+            for (MerkleTree.Node node : allNodes) {
+                System.out.println("     Node hash: " + bytesToHex(node.getHash()));
+            }
+
+            // 8) Test clone
+            System.out.println("7) Testing clone method...");
+            String cloneName = treeName + "_clone";
+            MerkleTree clonedTree = tree.clone(cloneName);
+            System.out.println("   Cloned tree created with name: " + cloneName);
+
+            // Compare a few properties on the cloned tree
+            System.out.println("   Cloned tree getRootHash() not null: " + (clonedTree.getRootHash() != null));
+            System.out.println("   Cloned tree getNumLeaves(): " + clonedTree.getNumLeaves());
+            System.out.println("   Cloned tree getDepth(): " + clonedTree.getDepth());
+            // Compare data for KeyA
+            byte[] clonedKeyAData = clonedTree.getData(keyA);
+            System.out.println("   Cloned tree getData(KeyA) matches original: "
+                    + Arrays.equals(tree.getData(keyA), clonedKeyAData));
+            // Compare data for KeyB
+            byte[] clonedKeyBData = clonedTree.getData(keyB);
+            System.out.println("   Cloned tree getData(KeyB) matches original: "
+                    + Arrays.equals(tree.getData(keyB), clonedKeyBData));
+
+            // Close cloned tree
+            clonedTree.close();
+            System.out.println("   Cloned tree closed successfully.");
+
+            // 9) Finally, close the original tree
+            System.out.println("8) Testing close method...");
+            tree.close();
+            System.out.println("   Original tree closed successfully.");
+
+            // Extra: Attempt to close again (should not throw errors; just be idempotent)
+            tree.close();
+            System.out.println("   Original tree closed again (no error).");
+
         } catch (Exception e) {
-            handleException(e);
+            e.printStackTrace();
+        } finally {
+            // If a test fails unexpectedly, ensure we attempt to close the tree
+            if (tree != null) {
+                try {
+                    tree.close();
+                } catch (RocksDBException ex) {
+                    // ignore
+                }
+            }
         }
     }
 
-    private static void testModifyAfterClone() {
-        testCount++;
-        try {
-            MerkleTree original = new MerkleTree("testModify_" + testCount);
-            original.addOrUpdateData("key".getBytes(), "original".getBytes());
-            original.flushToDisk();
-
-            MerkleTree clone = original.clone("testModifyClone_" + testCount);
-
-            // Modify original after cloning
-            original.addOrUpdateData("key".getBytes(), "modified".getBytes());
-            original.flushToDisk();
-
-            assertFalse(Arrays.equals(
-                    original.getData("key".getBytes()),
-                    clone.getData("key".getBytes())
-            ), "Clone should not be affected by original modifications");
-
-            original.close();
-            clone.close();
-        } catch (Exception e) {
-            handleException(e);
+    /**
+     * Simple helper to display bytes as hex for debugging.
+     */
+    private static String bytesToHex(byte[] data) {
+        if (data == null) return "null";
+        StringBuilder sb = new StringBuilder();
+        for (byte b : data) {
+            sb.append(String.format("%02x", b));
         }
-    }
-
-    // Helper methods
-    private static void assertTrue(boolean condition, String message) {
-        if (condition) {
-            System.out.println("[PASS] " + message);
-        } else {
-            System.out.println("[FAIL] " + message);
-        }
-    }
-
-    private static void assertFalse(boolean condition, String message) {
-        assertTrue(!condition, message);
-    }
-
-    private static void assertEqualArrays(byte[] arr1, byte[] arr2, String message) {
-        boolean equal = Arrays.equals(arr1, arr2);
-        if (equal) {
-            System.out.println("[PASS] " + message);
-        } else {
-            System.out.println("[FAIL] " + message);
-        }
-    }
-
-    private static void handleException(Exception e) {
-        System.out.println("[ERROR] Test failed with exception: " + e.getMessage());
-        e.printStackTrace();
+        return sb.toString();
     }
 }

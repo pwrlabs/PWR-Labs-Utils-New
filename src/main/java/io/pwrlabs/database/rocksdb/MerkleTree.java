@@ -44,7 +44,6 @@ public class MerkleTree {
     //endregion
 
     //region ===================== Fields =====================
-    @Getter
     private final String treeName;
     private final String path;
     private RocksDB db;
@@ -331,141 +330,32 @@ public class MerkleTree {
 
     //region ===================== Public Methods =====================
     /**
-     * Add a new leaf node to the Merkle Tree.
+     * Get the current root hash of the Merkle tree.
      */
-    public void addLeaf(Node leafNode) throws RocksDBException {
-        if (leafNode == null) {
-            throw new IllegalArgumentException("Leaf node cannot be null");
-        }
-        if (leafNode.hash == null) {
-            throw new IllegalArgumentException("Leaf node hash cannot be null");
-        }
-        
-        lock.writeLock().lock();
+    public byte[] getRootHash() {
+        lock.readLock().lock();
         try {
-            if (numLeaves == 0) {
-                hangingNodes.put(0, leafNode.hash);
-                rootHash = leafNode.hash;
-            } else {
-                Node hangingLeaf = getNodeByHash(hangingNodes.get(0));
-
-                // If there's no hanging leaf at level 0, place this one there.
-                if (hangingLeaf == null) {
-                    hangingNodes.put(0, leafNode.hash);
-
-                    Node parentNode = new Node(leafNode.hash, null);
-                    leafNode.setParentNodeHash(parentNode.hash);
-                    addNode(1, parentNode);
-                } else {
-                    // If a leaf is already hanging, connect this leaf with the parent's parent
-                    if (hangingLeaf.parent == null) { //If the hanging leaf is the root
-                        Node parentNode = new Node(hangingLeaf.hash, leafNode.hash);
-                        hangingLeaf.setParentNodeHash(parentNode.hash);
-                        leafNode.setParentNodeHash(parentNode.hash);
-                        addNode(1, parentNode);
-                    } else {
-                        Node parentNodeOfHangingLeaf = getNodeByHash(hangingLeaf.parent);
-                        if (parentNodeOfHangingLeaf == null) {
-                            throw new IllegalStateException("Parent node of hanging leaf not found");
-                        }
-                        parentNodeOfHangingLeaf.addLeaf(leafNode.hash);
-                    }
-                    hangingNodes.remove(0);
-                }
-            }
-
-            numLeaves++;
+            return rootHash;
         } finally {
-            lock.writeLock().unlock();
+            lock.readLock().unlock();
         }
     }
 
-    public void addLeafIfMissing(byte[] leafHash) {
-        if (leafHash == null) {
-            throw new IllegalArgumentException("Leaf hash cannot be null");
-        }
-        
-        lock.writeLock().lock();
+    public int getNumLeaves() {
+        lock.readLock().lock();
         try {
-            if (getNodeByHash(leafHash) == null) {
-                addLeaf(new Node(leafHash));
-            }
-        } catch (RocksDBException e) {
-            throw new RuntimeException(e);
+            return numLeaves;
         } finally {
-            lock.writeLock().unlock();
+            lock.readLock().unlock();
         }
     }
 
-    public void updateLeaf(byte[] oldLeafHash, byte[] newLeafHash) {
-        if (oldLeafHash == null) {
-            throw new IllegalArgumentException("Old leaf hash cannot be null");
-        }
-        if (newLeafHash == null) {
-            throw new IllegalArgumentException("New leaf hash cannot be null");
-        }
-        
-        lock.writeLock().lock();
+    public int getDepth() {
+        lock.readLock().lock();
         try {
-            Node leaf = getNodeByHash(oldLeafHash);
-
-            if(leaf == null) {
-                throw new IllegalArgumentException("Leaf not found: " + Hex.toHexString(oldLeafHash));
-            } else {
-                leaf.updateNodeHash(newLeafHash);
-            }
-        } catch (RocksDBException e) {
-            throw new RuntimeException("Error updating leaf: " + e.getMessage(), e);
+            return depth;
         } finally {
-            lock.writeLock().unlock();
-        }
-    }
-
-    /**
-     * Add a node at a given level.
-     */
-    public void addNode(int level, Node node) throws RocksDBException {
-        lock.writeLock().lock();
-        try {
-            if (level > depth) depth = level;
-            Node hangingNode = getNodeByHash(hangingNodes.get(level));
-
-            if (hangingNode == null) {
-                // No hanging node at this level, so let's hang this node.
-                hangingNodes.put(level, node.hash);
-
-                // If this level is the depth level, this node's hash is the new root hash
-                if (level >= depth) {
-                    rootHash = node.hash;
-                } else {
-                    // Otherwise, create a parent and keep going up
-                    Node parentNode = new Node(node.hash, null);
-                    node.setParentNodeHash(parentNode.hash);
-                    addNode(level + 1, parentNode);
-                }
-            } else if(hangingNode.parent == null) {
-                Node parent = new Node(hangingNode.hash, node.hash);
-                hangingNode.setParentNodeHash(parent.hash);
-                node.setParentNodeHash(parent.hash);
-                hangingNodes.remove(level);
-                addNode(level + 1, parent);
-            } else {
-                // If a node is already hanging at this level, attach the new node as a leaf
-                Node parentNodeOfHangingNode = getNodeByHash(hangingNode.parent);
-                if (parentNodeOfHangingNode != null) {
-                    parentNodeOfHangingNode.addLeaf(node.hash);
-                    hangingNodes.remove(level);
-                } else {
-                    // If parent node is null, create a new parent node
-                    Node parent = new Node(hangingNode.hash, node.hash);
-                    hangingNode.setParentNodeHash(parent.hash);
-                    node.setParentNodeHash(parent.hash);
-                    hangingNodes.remove(level);
-                    addNode(level + 1, parent);
-                }
-            }
-        } finally {
-            lock.writeLock().unlock();
+            lock.readLock().unlock();
         }
     }
 
@@ -475,7 +365,7 @@ public class MerkleTree {
      * @throws RocksDBException If there's an error accessing RocksDB
      */
     public HashSet<Node> getAllNodes() throws RocksDBException {
-        lock.writeLock().lock();
+        lock.readLock().lock();
         try {
             HashSet<Node> allNodes = new HashSet<>();
             
@@ -498,7 +388,7 @@ public class MerkleTree {
             
             return allNodes;
         } finally {
-            lock.writeLock().unlock();
+            lock.readLock().unlock();
         }
     }
 
@@ -545,7 +435,7 @@ public class MerkleTree {
             byte[] existingData = getData(key);
             
             // Calculate hash from key and data
-            byte[] leafHash = PWRHash.hash256(key, data);
+            byte[] leafHash = calculateLeafHash(key, data);
             
             // Store key-data mapping
             keyDataCache.put(new ByteArrayWrapper(key), data);
@@ -556,7 +446,7 @@ public class MerkleTree {
             } else {
                 // Key exists, update leaf
                 // First get the old leaf hash
-                byte[] oldLeafHash = PWRHash.hash256(key, existingData);
+                byte[] oldLeafHash = calculateLeafHash(key, existingData);
                 updateLeaf(oldLeafHash, leafHash);
             }
             
@@ -578,25 +468,6 @@ public class MerkleTree {
             throw new RuntimeException(e);
         } finally {
             lock.writeLock().unlock();
-        }
-    }
-
-    /**
-     * Helper method to recursively delete a directory.
-     */
-    private void deleteDirectory(File directory) {
-        if (directory.exists()) {
-            File[] files = directory.listFiles();
-            if (files != null) {
-                for (File file : files) {
-                    if (file.isDirectory()) {
-                        deleteDirectory(file);
-                    } else {
-                        file.delete();
-                    }
-                }
-            }
-            directory.delete();
         }
     }
 
@@ -701,13 +572,6 @@ public class MerkleTree {
     }
 
     /**
-     * Get the current root hash of the Merkle tree.
-     */
-    public byte[] getRootHash() {
-        return rootHash;
-    }
-
-    /**
      * Close the databases (optional, if you need cleanup).
      */
     public void close() throws RocksDBException {
@@ -750,139 +614,6 @@ public class MerkleTree {
 
             openTrees.remove(treeName);
             closed = true;
-        } finally {
-            lock.writeLock().unlock();
-        }
-    }
-
-    /**
-     * Efficiently clears the entire MerkleTree by closing, deleting and recreating the RocksDB instance.
-     * This is much faster than iterating through all entries and deleting them individually.
-     */
-    /**
-     * Efficiently clears the entire MerkleTree by closing, deleting and recreating the RocksDB instance.
-     * This is much faster than iterating through all entries and deleting them individually.
-     */
-    public void clear() {
-        lock.writeLock().lock();
-        try {
-            // First close the current DB
-            if (!closed) {
-                // Close all column family handles
-                if (metaDataHandle != null) {
-                    try {
-                        metaDataHandle.close();
-                    } catch (Exception e) {
-                        // Log error but continue
-                    }
-                    metaDataHandle = null;
-                }
-
-                if (nodesHandle != null) {
-                    try {
-                        nodesHandle.close();
-                    } catch (Exception e) {
-                        // Log error but continue
-                    }
-                    nodesHandle = null;
-                }
-
-                if (keyDataHandle != null) {
-                    try {
-                        keyDataHandle.close();
-                    } catch (Exception e) {
-                        // Log error but continue
-                    }
-                    keyDataHandle = null;
-                }
-
-                if (db != null) {
-                    try {
-                        db.close();
-                    } catch (Exception e) {
-                        // Log error but continue
-                    }
-                }
-            }
-
-            // Clear in-memory structures
-            nodesCache.clear();
-            hangingNodes.clear();
-            keyDataCache.clear();
-            rootHash = null;
-            numLeaves = 0;
-            depth = 0;
-
-            // Delete the directory
-            File treeDir = new File("merkleTree/" + treeName);
-            deleteDirectory(treeDir);
-
-            // Re-open a fresh DB
-            try {
-                // Ensure directory exists
-                if (!treeDir.exists() && !treeDir.mkdirs()) {
-                    throw new RocksDBException("Failed to create directory: " + treeDir.getPath());
-                }
-
-                // Configure DB options
-                DBOptions dbOptions = new DBOptions()
-                        .setCreateIfMissing(true)
-                        .setCreateMissingColumnFamilies(true)
-                        .setParanoidChecks(true)
-                        .setUseDirectReads(true)
-                        .setUseDirectIoForFlushAndCompaction(true);
-
-                // Re-apply all the options from the constructor
-                dbOptions.setMaxTotalWalSize(45 * 1024 * 1024L)
-                        .setWalSizeLimitMB(15)
-                        .setWalTtlSeconds(24 * 60 * 60)
-                        .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL)
-                        .setDbLogDir("")
-                        .setLogFileTimeToRoll(0);
-
-                dbOptions.setAllowMmapReads(false)
-                        .setAllowMmapWrites(false)
-                        .setMaxOpenFiles(1000)
-                        .setMaxFileOpeningThreads(10);
-
-                dbOptions.setEnableWriteThreadAdaptiveYield(true)
-                        .setAllowConcurrentMemtableWrite(true);
-
-                // Configure column family options
-                ColumnFamilyOptions cfOptions = new ColumnFamilyOptions()
-                        .optimizeUniversalStyleCompaction()
-                        .setWriteBufferSize(64 * 1024 * 1024L)
-                        .setMaxWriteBufferNumber(3);
-
-                // Prepare column families
-                List<ColumnFamilyDescriptor> cfDescriptors = new ArrayList<>();
-                List<ColumnFamilyHandle> cfHandles = new ArrayList<>();
-
-                // Always need default CF
-                cfDescriptors.add(new ColumnFamilyDescriptor(
-                        RocksDB.DEFAULT_COLUMN_FAMILY, cfOptions));
-
-                // Our custom CFs
-                cfDescriptors.add(new ColumnFamilyDescriptor(
-                        METADATA_DB_NAME.getBytes(), cfOptions));
-                cfDescriptors.add(new ColumnFamilyDescriptor(
-                        NODES_DB_NAME.getBytes(), cfOptions));
-                cfDescriptors.add(new ColumnFamilyDescriptor(
-                        KEY_DATA_DB_NAME.getBytes(), cfOptions));
-
-                // Open a fresh DB with all column families
-                this.db = RocksDB.open(dbOptions, treeDir.getPath(), cfDescriptors, cfHandles);
-
-                // Assign handles
-                this.metaDataHandle = cfHandles.get(1);
-                this.nodesHandle = cfHandles.get(2);
-                this.keyDataHandle = cfHandles.get(3);
-
-                // Reset closed flag
-                closed = false;
-            } catch (RocksDBException e) {
-                throw new RuntimeException("Failed to re-initialize RocksDB after clearing: " + e.getMessage(), e);
-            }
         } finally {
             lock.writeLock().unlock();
         }
@@ -1015,6 +746,133 @@ public class MerkleTree {
 
         return new Node(hash, left, right, parent);
     }
+
+    private byte[] calculateLeafHash(byte[] key, byte[] data) {
+        return PWRHash.hash256(key, data);
+    }
+
+    /**
+     * Add a new leaf node to the Merkle Tree.
+     */
+    private void addLeaf(Node leafNode) throws RocksDBException {
+        if (leafNode == null) {
+            throw new IllegalArgumentException("Leaf node cannot be null");
+        }
+        if (leafNode.hash == null) {
+            throw new IllegalArgumentException("Leaf node hash cannot be null");
+        }
+
+        lock.writeLock().lock();
+        try {
+            if (numLeaves == 0) {
+                hangingNodes.put(0, leafNode.hash);
+                rootHash = leafNode.hash;
+            } else {
+                Node hangingLeaf = getNodeByHash(hangingNodes.get(0));
+
+                // If there's no hanging leaf at level 0, place this one there.
+                if (hangingLeaf == null) {
+                    hangingNodes.put(0, leafNode.hash);
+
+                    Node parentNode = new Node(leafNode.hash, null);
+                    leafNode.setParentNodeHash(parentNode.hash);
+                    addNode(1, parentNode);
+                } else {
+                    // If a leaf is already hanging, connect this leaf with the parent's parent
+                    if (hangingLeaf.parent == null) { //If the hanging leaf is the root
+                        Node parentNode = new Node(hangingLeaf.hash, leafNode.hash);
+                        hangingLeaf.setParentNodeHash(parentNode.hash);
+                        leafNode.setParentNodeHash(parentNode.hash);
+                        addNode(1, parentNode);
+                    } else {
+                        Node parentNodeOfHangingLeaf = getNodeByHash(hangingLeaf.parent);
+                        if (parentNodeOfHangingLeaf == null) {
+                            throw new IllegalStateException("Parent node of hanging leaf not found");
+                        }
+                        parentNodeOfHangingLeaf.addLeaf(leafNode.hash);
+                    }
+                    hangingNodes.remove(0);
+                }
+            }
+
+            numLeaves++;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    private void updateLeaf(byte[] oldLeafHash, byte[] newLeafHash) {
+        if (oldLeafHash == null) {
+            throw new IllegalArgumentException("Old leaf hash cannot be null");
+        }
+        if (newLeafHash == null) {
+            throw new IllegalArgumentException("New leaf hash cannot be null");
+        }
+
+        lock.writeLock().lock();
+        try {
+            Node leaf = getNodeByHash(oldLeafHash);
+
+            if(leaf == null) {
+                throw new IllegalArgumentException("Leaf not found: " + Hex.toHexString(oldLeafHash));
+            } else {
+                leaf.updateNodeHash(newLeafHash);
+            }
+        } catch (RocksDBException e) {
+            throw new RuntimeException("Error updating leaf: " + e.getMessage(), e);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Add a node at a given level.
+     */
+    private void addNode(int level, Node node) throws RocksDBException {
+        lock.writeLock().lock();
+        try {
+            if (level > depth) depth = level;
+            Node hangingNode = getNodeByHash(hangingNodes.get(level));
+
+            if (hangingNode == null) {
+                // No hanging node at this level, so let's hang this node.
+                hangingNodes.put(level, node.hash);
+
+                // If this level is the depth level, this node's hash is the new root hash
+                if (level >= depth) {
+                    rootHash = node.hash;
+                } else {
+                    // Otherwise, create a parent and keep going up
+                    Node parentNode = new Node(node.hash, null);
+                    node.setParentNodeHash(parentNode.hash);
+                    addNode(level + 1, parentNode);
+                }
+            } else if(hangingNode.parent == null) {
+                Node parent = new Node(hangingNode.hash, node.hash);
+                hangingNode.setParentNodeHash(parent.hash);
+                node.setParentNodeHash(parent.hash);
+                hangingNodes.remove(level);
+                addNode(level + 1, parent);
+            } else {
+                // If a node is already hanging at this level, attach the new node as a leaf
+                Node parentNodeOfHangingNode = getNodeByHash(hangingNode.parent);
+                if (parentNodeOfHangingNode != null) {
+                    parentNodeOfHangingNode.addLeaf(node.hash);
+                    hangingNodes.remove(level);
+                } else {
+                    // If parent node is null, create a new parent node
+                    Node parent = new Node(hangingNode.hash, node.hash);
+                    hangingNode.setParentNodeHash(parent.hash);
+                    node.setParentNodeHash(parent.hash);
+                    hangingNodes.remove(level);
+                    addNode(level + 1, parent);
+                }
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
     //endregion
 
     //region ===================== Nested Classes =====================
@@ -1340,93 +1198,4 @@ public class MerkleTree {
     }
     //endregion
 
-    //region ===================== Equals =====================
-    public boolean equals(MerkleTree other) {
-        if (other == null) return false;
-
-        try {
-            // 1. Compare basic metadata
-            if (!Arrays.equals(this.rootHash, other.rootHash)) return false;
-            if (this.numLeaves != other.numLeaves) return false;
-            if (this.depth != other.depth) return false;
-
-            // 2. Compare node structure
-            if (!compareAllNodes(other)) return false;
-
-            // 3. Compare key-value data
-            if (!compareKeyData(other)) return false;
-
-            // 4. Compare hanging nodes
-            if (!compareHangingNodes(other)) return false;
-
-            return true;
-        } catch (RocksDBException e) {
-            // Log error if needed
-            return false;
-        }
-    }
-
-    private boolean compareAllNodes(MerkleTree other) throws RocksDBException {
-        Set<Node> thisNodes = this.getAllNodes();
-        Set<Node> otherNodes = other.getAllNodes();
-
-        // Check node count match
-        if (thisNodes.size() != otherNodes.size()) return false;
-
-        // Check each node exists in both trees with same properties
-        for (Node node : thisNodes) {
-            Node otherNode = other.getNodeByHash(node.getHash());
-            if (otherNode == null) return false;
-
-            if (!Arrays.equals(node.getHash(), otherNode.getHash())) return false;
-            if (!Arrays.equals(node.getLeft(), otherNode.getLeft())) return false;
-            if (!Arrays.equals(node.getRight(), otherNode.getRight())) return false;
-            if (!Arrays.equals(node.getParent(), otherNode.getParent())) return false;
-        }
-
-        return true;
-    }
-
-    private boolean compareKeyData(MerkleTree other) throws RocksDBException {
-        Map<ByteArrayWrapper, byte[]> thisData = getAllKeyData();
-        Map<ByteArrayWrapper, byte[]> otherData = other.getAllKeyData();
-
-        if (thisData.size() != otherData.size()) return false;
-
-        for (Map.Entry<ByteArrayWrapper, byte[]> entry : thisData.entrySet()) {
-            byte[] otherValue = otherData.get(entry.getKey());
-            if (!Arrays.equals(entry.getValue(), otherValue)) return false;
-        }
-
-        return true;
-    }
-
-    private boolean compareHangingNodes(MerkleTree other) {
-        if (this.hangingNodes.size() != other.hangingNodes.size()) return false;
-
-        for (Map.Entry<Integer, byte[]> entry : this.hangingNodes.entrySet()) {
-            byte[] otherHash = other.hangingNodes.get(entry.getKey());
-            if (!Arrays.equals(entry.getValue(), otherHash)) return false;
-        }
-
-        return true;
-    }
-
-    private Map<ByteArrayWrapper, byte[]> getAllKeyData() throws RocksDBException {
-        Map<ByteArrayWrapper, byte[]> data = new HashMap<>();
-
-        try (RocksIterator iterator = db.newIterator(keyDataHandle)) {
-            iterator.seekToFirst();
-            while (iterator.isValid()) {
-                data.put(
-                        new ByteArrayWrapper(iterator.key()),
-                        iterator.value()
-                );
-                iterator.next();
-            }
-        }
-
-        return data;
-    }
-    //endregion
 }
