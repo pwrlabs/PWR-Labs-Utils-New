@@ -436,6 +436,10 @@ public class MerkleTree {
         try {
             // Check if key already exists
             byte[] existingData = getData(key);
+            if (existingData != null) {
+                //We do this in order to copy the data and not its location in memory
+                existingData = Arrays.copyOf(existingData, existingData.length);
+            }
 
             // Calculate hash from key and data
             byte[] leafHash = calculateLeafHash(key, data);
@@ -927,7 +931,6 @@ public class MerkleTree {
                 }
             }
 
-            nodesCache.put(new ByteArrayWrapper(leafNode.hash), leafNode);
             numLeaves++;
         } finally {
             lock.writeLock().unlock();
@@ -941,6 +944,7 @@ public class MerkleTree {
         if (newLeafHash == null) {
             throw new IllegalArgumentException("New leaf hash cannot be null");
         }
+        errorIf(!Arrays.equals(oldLeafHash, newLeafHash), "Old and new leaf hashes cannot be the same");
 
         lock.writeLock().lock();
         try {
