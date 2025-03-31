@@ -44,8 +44,11 @@ public class MerkleTree {
     //endregion
 
     //region ===================== Fields =====================
+    @Getter
     private final String treeName;
+    @Getter
     private final String path;
+
     private RocksDB db;
     private ColumnFamilyHandle metaDataHandle;
     private ColumnFamilyHandle nodesHandle;
@@ -368,24 +371,24 @@ public class MerkleTree {
         lock.readLock().lock();
         try {
             HashSet<Node> allNodes = new HashSet<>();
-            
+
             // First flush any pending changes to disk
             flushToDisk();
-            
+
             // Use RocksIterator to iterate through all nodes in the nodesHandle column family
             try (RocksIterator iterator = db.newIterator(nodesHandle)) {
                 iterator.seekToFirst();
                 while (iterator.isValid()) {
                     byte[] nodeData = iterator.value();
-                    
+
                     // Decode the node from its binary representation
                     Node node = decodeNode(nodeData);
                     allNodes.add(node);
-                    
+
                     iterator.next();
                 }
             }
-            
+
             return allNodes;
         } finally {
             lock.readLock().unlock();
@@ -410,7 +413,7 @@ public class MerkleTree {
             throw new RuntimeException(e);
         }
     }
-    
+
     /**
      * Add or update data for a key in the Merkle Tree.
      * This will create a new leaf node with a hash derived from the key and data,
@@ -428,18 +431,18 @@ public class MerkleTree {
         if (data == null) {
             throw new IllegalArgumentException("Data cannot be null");
         }
-        
+
         lock.writeLock().lock();
         try {
             // Check if key already exists
             byte[] existingData = getData(key);
-            
+
             // Calculate hash from key and data
             byte[] leafHash = calculateLeafHash(key, data);
-            
+
             // Store key-data mapping
             keyDataCache.put(new ByteArrayWrapper(key), data);
-            
+
             if (existingData == null) {
                 // Key doesn't exist, add new leaf
                 addLeaf(new Node(leafHash));
@@ -449,13 +452,13 @@ public class MerkleTree {
                 byte[] oldLeafHash = calculateLeafHash(key, existingData);
                 updateLeaf(oldLeafHash, leafHash);
             }
-            
+
             flushToDisk();
         } finally {
             lock.writeLock().unlock();
         }
     }
-    
+
     public void revertUnsavedChanges() {
         lock.writeLock().lock();
         try {
@@ -595,7 +598,7 @@ public class MerkleTree {
                     // Log error
                 }
             }
-            
+
             if (keyDataHandle != null) {
                 try {
                     keyDataHandle.close();
@@ -653,6 +656,135 @@ public class MerkleTree {
             }
 
             return new MerkleTree(newTreeName);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Efficiently clears the entire MerkleTree by closing, deleting and recreating the RocksDB instance.
+     * This is much faster than iterating through all entries and deleting them individually.
+     */
+    public void clear() {
+        lock.writeLock().lock();
+        try {
+            // First close the current DB
+            if (!closed) {
+                // Close all column family handles
+                if (metaDataHandle != null) {
+                    try {
+                        metaDataHandle.close();
+                    } catch (Exception e) {
+                        // Log error but continue
+                    }
+                    metaDataHandle = null;
+                }
+
+                if (nodesHandle != null) {
+                    try {
+                        nodesHandle.close();
+                    } catch (Exception e) {
+                        // Log error but continue
+                    }
+                    nodesHandle = null;
+                }
+
+                if (keyDataHandle != null) {
+                    try {
+                        keyDataHandle.close();
+                    } catch (Exception e) {
+                        // Log error but continue
+                    }
+                    keyDataHandle = null;
+                }
+
+                if (db != null) {
+                    try {
+                        db.close();
+                    } catch (Exception e) {
+                        // Log error but continue
+                    }
+                }
+            }
+
+            // Clear in-memory structures
+            nodesCache.clear();
+            hangingNodes.clear();
+            keyDataCache.clear();
+            rootHash = null;
+            numLeaves = 0;
+            depth = 0;
+
+            // Delete the directory
+            File treeDir = new File("merkleTree/" + treeName);
+            FileUtils.deleteDirectory(treeDir);
+
+            // Re-open a fresh DB
+            try {
+                // Ensure directory exists
+                if (!treeDir.exists() && !treeDir.mkdirs()) {
+                    throw new RocksDBException("Failed to create directory: " + treeDir.getPath());
+                }
+
+                // Configure DB options
+                DBOptions dbOptions = new DBOptions()
+                        .setCreateIfMissing(true)
+                        .setCreateMissingColumnFamilies(true)
+                        .setParanoidChecks(true)
+                        .setUseDirectReads(true)
+                        .setUseDirectIoForFlushAndCompaction(true);
+
+                // Re-apply all the options from the constructor
+                dbOptions.setMaxTotalWalSize(45 * 1024 * 1024L)
+                        .setWalSizeLimitMB(15)
+                        .setWalTtlSeconds(24 * 60 * 60)
+                        .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL)
+                        .setDbLogDir("")
+                        .setLogFileTimeToRoll(0);
+
+                dbOptions.setAllowMmapReads(false)
+                        .setAllowMmapWrites(false)
+                        .setMaxOpenFiles(1000)
+                        .setMaxFileOpeningThreads(10);
+
+                dbOptions.setEnableWriteThreadAdaptiveYield(true)
+                        .setAllowConcurrentMemtableWrite(true);
+
+                // Configure column family options
+                ColumnFamilyOptions cfOptions = new ColumnFamilyOptions()
+                        .optimizeUniversalStyleCompaction()
+                        .setWriteBufferSize(64 * 1024 * 1024L)
+                        .setMaxWriteBufferNumber(3);
+
+                // Prepare column families
+                List<ColumnFamilyDescriptor> cfDescriptors = new ArrayList<>();
+                List<ColumnFamilyHandle> cfHandles = new ArrayList<>();
+
+                // Always need default CF
+                cfDescriptors.add(new ColumnFamilyDescriptor(
+                        RocksDB.DEFAULT_COLUMN_FAMILY, cfOptions));
+
+                // Our custom CFs
+                cfDescriptors.add(new ColumnFamilyDescriptor(
+                        METADATA_DB_NAME.getBytes(), cfOptions));
+                cfDescriptors.add(new ColumnFamilyDescriptor(
+                        NODES_DB_NAME.getBytes(), cfOptions));
+                cfDescriptors.add(new ColumnFamilyDescriptor(
+                        KEY_DATA_DB_NAME.getBytes(), cfOptions));
+
+                // Open a fresh DB with all column families
+                this.db = RocksDB.open(dbOptions, treeDir.getPath(), cfDescriptors, cfHandles);
+
+                // Assign handles
+                this.metaDataHandle = cfHandles.get(1);
+                this.nodesHandle = cfHandles.get(2);
+                this.keyDataHandle = cfHandles.get(3);
+
+                // Reset closed flag
+                closed = false;
+            } catch (RocksDBException e) {
+                throw new RuntimeException("Failed to re-initialize RocksDB after clearing: " + e.getMessage(), e);
+            }
         } finally {
             lock.writeLock().unlock();
         }
@@ -927,11 +1059,11 @@ public class MerkleTree {
             if (left == null && right == null) {
                 throw new IllegalArgumentException("At least one of left or right hash must be non-null");
             }
-            
+
             this.left = left;
             this.right = right;
             this.hash = calculateHash();
-            
+
             if (this.hash == null) {
                 throw new IllegalStateException("Failed to calculate node hash");
             }
@@ -1031,7 +1163,7 @@ public class MerkleTree {
                 // If this is the root node, update the root hash
                 if (isRoot) {
                     rootHash = newHash;
-                    
+
                     if(left != null) {
                         Node leftNode = getNodeByHash(left);
                         if (leftNode != null) {
@@ -1055,7 +1187,7 @@ public class MerkleTree {
                         byte[] newParentHash = parentNode.calculateHash();
                         parentNode.updateNodeHash(newParentHash);
                     }
-                } 
+                }
                 // If this is an internal node with a parent, update the parent and children
                 else if (!isLeaf && !isRoot) {
                     if (left != null) {
@@ -1108,7 +1240,7 @@ public class MerkleTree {
             if (leafHash == null) {
                 throw new IllegalArgumentException("Leaf hash cannot be null");
             }
-            
+
             lock.writeLock().lock();
             try {
                 Node leafNode = getNodeByHash(leafHash);
