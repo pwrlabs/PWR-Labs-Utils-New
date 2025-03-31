@@ -436,10 +436,7 @@ public class MerkleTree {
         try {
             // Check if key already exists
             byte[] existingData = getData(key);
-            if (existingData != null) {
-                //We do this in order to copy the data and not its location in memory
-                existingData = Arrays.copyOf(existingData, existingData.length);
-            }
+            byte[] oldLeafHash = existingData == null ? null : calculateLeafHash(key, existingData);
 
             // Calculate hash from key and data
             byte[] leafHash = calculateLeafHash(key, data);
@@ -447,13 +444,12 @@ public class MerkleTree {
             // Store key-data mapping
             keyDataCache.put(new ByteArrayWrapper(key), data);
 
-            if (existingData == null) {
+            if (oldLeafHash == null) {
                 // Key doesn't exist, add new leaf
                 addLeaf(new Node(leafHash));
             } else {
                 // Key exists, update leaf
                 // First get the old leaf hash
-                byte[] oldLeafHash = calculateLeafHash(key, existingData);
                 updateLeaf(oldLeafHash, leafHash);
             }
 
