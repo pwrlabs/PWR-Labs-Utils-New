@@ -940,7 +940,7 @@ public class MerkleTree {
         if (newLeafHash == null) {
             throw new IllegalArgumentException("New leaf hash cannot be null");
         }
-        errorIf(!Arrays.equals(oldLeafHash, newLeafHash), "Old and new leaf hashes cannot be the same");
+        errorIf(Arrays.equals(oldLeafHash, newLeafHash), "Old and new leaf hashes cannot be the same");
 
         lock.writeLock().lock();
         try {
