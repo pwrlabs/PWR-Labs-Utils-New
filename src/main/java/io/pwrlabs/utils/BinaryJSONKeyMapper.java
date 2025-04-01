@@ -11,8 +11,6 @@ public class BinaryJSONKeyMapper {
     private static short nextId = 0;
     
     public static void addKey(String key) {
-        key = key.toLowerCase();
-
         KEY_TO_ID.put(key, nextId);
         ID_TO_KEY.put(nextId++, key);
     }
