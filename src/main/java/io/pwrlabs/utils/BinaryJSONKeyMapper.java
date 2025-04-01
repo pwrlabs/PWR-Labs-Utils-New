@@ -24,7 +24,6 @@ public class BinaryJSONKeyMapper {
     }
 
     public static void removeKey(String key) {
-        key = key.toLowerCase();
         short id = KEY_TO_ID.get(key);
 
         KEY_TO_ID.remove(key);
@@ -54,8 +53,6 @@ public class BinaryJSONKeyMapper {
         if (key == null || key.isEmpty() || KEY_TO_ID.isEmpty()) {
             return null;
         }
-
-        key = key.toLowerCase(); // Consistent with other methods in the class
 
         // If the key exists exactly, return it
         if (KEY_TO_ID.containsKey(key)) {

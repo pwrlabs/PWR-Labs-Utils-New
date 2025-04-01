@@ -84,8 +84,6 @@ public class BinaryJSONObject {
         byte[] keyBytes = key.getBytes();
         errorIf(keyBytes.length <= 2, "Key length must be greater than 2"); //We prevent keys whose length is less than 2 bytes because then it might collide with the ids in key mappers
 
-        key = key.toLowerCase();
-
         if(mappedKeysOnly) {
             Short keyId = BinaryJSONKeyMapper.getId(key);
             errorIf(keyId == null, "Key not found in key mapper. Closest key: " + BinaryJSONKeyMapper.closestMatch(key));
@@ -103,8 +101,6 @@ public class BinaryJSONObject {
     }
 
     public Object get(String key) {
-        key = key.toLowerCase();
-
         return keyValueMap.get(key);
     }
 
