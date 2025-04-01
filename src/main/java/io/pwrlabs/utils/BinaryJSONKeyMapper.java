@@ -136,6 +136,7 @@ public class BinaryJSONKeyMapper {
     public static final String PREVIOUS_BLOCK_HASH = "previousBlockHash";
     public static final String BLOCKCHAIN_VERSION = "blockchainVersion";
     public static final String BLOCK_REWARD = "blockReward";
+    public static final String BURNED_FEES = "burnedFees";
 
     public static final String TITLE = "title";
     public static final String DESCRIPTION = "description";
@@ -189,7 +190,6 @@ public class BinaryJSONKeyMapper {
         addKey(POSITION_IN_WRAPPED_TXN);
         addKey(SIZE);
 
-
         addKey(BLOCK_NUMBER);
         addKey(TIME_STAMP);
         addKey(BLOCK_HASH);
@@ -198,6 +198,7 @@ public class BinaryJSONKeyMapper {
         addKey(PREVIOUS_BLOCK_HASH);
         addKey(BLOCKCHAIN_VERSION);
         addKey(BLOCK_REWARD);
+        addKey(BURNED_FEES);
 
         addKey(TITLE);
         addKey(DESCRIPTION);
