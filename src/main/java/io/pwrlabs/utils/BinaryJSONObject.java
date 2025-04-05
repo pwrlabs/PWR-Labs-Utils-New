@@ -74,6 +74,9 @@ public class BinaryJSONObject {
                     buffer.get(valueBytes4);
                     keyValueMap.put(keyStr, new BinaryJSONObject(valueBytes4));
                     break;
+                case 9: //Byte
+                    keyValueMap.put(keyStr, buffer.get());
+                    break;
                 default:
                     throw new IllegalArgumentException("Unsupported value type");
             }
@@ -81,6 +84,9 @@ public class BinaryJSONObject {
     }
 
     public void put(String key, Object value) {
+        errorIf(key == null, "Key is null");
+        errorIf(value == null, "Value is null");
+
         byte[] keyBytes = key.getBytes();
         errorIf(keyBytes.length <= 2, "Key length must be greater than 2"); //We prevent keys whose length is less than 2 bytes because then it might collide with the ids in key mappers
 
@@ -181,6 +187,9 @@ public class BinaryJSONObject {
                 byte[] valueBytes = ((BinaryJSONObject) value).toByteArray();
                 bos.write(ByteBuffer.allocate(4).putInt(valueBytes.length).array());
                 bos.write(valueBytes);
+            } else if (value instanceof Byte) {
+                bos.write(9); // Type
+                bos.write((byte) value);
             }
 
             else {

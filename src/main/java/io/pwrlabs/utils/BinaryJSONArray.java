@@ -55,6 +55,9 @@ public class BinaryJSONArray {
                     buffer.get(valueBytes4);
                     values.add(new BinaryJSONObject(valueBytes4));
                     break;
+                case 9: //Byte
+                    values.add(buffer.get());
+                    break;
                 default:
                     throw new IllegalArgumentException("Unsupported value type");
             }
@@ -117,6 +120,9 @@ public class BinaryJSONArray {
                 byte[] valueBytes = ((BinaryJSONObject) value).toByteArray();
                 bos.write(ByteBuffer.allocate(4).putInt(valueBytes.length).array());
                 bos.write(valueBytes);
+            } else if (value instanceof Byte) {
+                bos.write(9); // Type
+                bos.write((byte) value);
             } else {
                 throw new IllegalArgumentException("Unsupported value type");
             }
