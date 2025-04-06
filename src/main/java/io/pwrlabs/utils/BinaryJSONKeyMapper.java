@@ -137,6 +137,11 @@ public class BinaryJSONKeyMapper {
     public static final String TITLE = "title";
     public static final String DESCRIPTION = "description";
     public static final String PROPOSAL_HASH = "proposalHash";
+    public static final String ACCEPTORS = "acceptors";
+    public static final String REJECTORS = "rejectors";
+    public static final String ABSTAINERS = "abstainers";
+    public static final String STATUS = "status";
+    public static final String PROPOSAL_TYPE = "proposalType";
     public static final String EARLY_WITHDRAW_TIME = "earlyWithdrawTime";
     public static final String EARLY_WITHDRAW_PENALTY = "earlyWithdrawPenalty";
     public static final String MAX_BLOCK_SIZE = "maxBlockSize";
@@ -200,6 +205,11 @@ public class BinaryJSONKeyMapper {
         addKey(TITLE);
         addKey(DESCRIPTION);
         addKey(PROPOSAL_HASH);
+        addKey(ACCEPTORS);
+        addKey(REJECTORS);
+        addKey(ABSTAINERS);
+        addKey(STATUS);
+        addKey(PROPOSAL_TYPE);
         addKey(EARLY_WITHDRAW_TIME);
         addKey(EARLY_WITHDRAW_PENALTY);
         addKey(MAX_BLOCK_SIZE);
