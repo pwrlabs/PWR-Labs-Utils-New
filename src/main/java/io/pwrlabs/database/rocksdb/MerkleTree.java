@@ -439,18 +439,20 @@ public class MerkleTree {
             byte[] oldLeafHash = existingData == null ? null : calculateLeafHash(key, existingData);
 
             // Calculate hash from key and data
-            byte[] leafHash = calculateLeafHash(key, data);
+            byte[] newLeafHash = calculateLeafHash(key, data);
+
+            if(oldLeafHash != null && Arrays.equals(oldLeafHash, newLeafHash)) return;
 
             // Store key-data mapping
             keyDataCache.put(new ByteArrayWrapper(key), data);
 
             if (oldLeafHash == null) {
                 // Key doesn't exist, add new leaf
-                addLeaf(new Node(leafHash));
+                addLeaf(new Node(newLeafHash));
             } else {
                 // Key exists, update leaf
                 // First get the old leaf hash
-                updateLeaf(oldLeafHash, leafHash);
+                updateLeaf(oldLeafHash, newLeafHash);
             }
 
             flushToDisk();
