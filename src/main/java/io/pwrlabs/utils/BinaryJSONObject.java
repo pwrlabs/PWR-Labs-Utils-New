@@ -175,6 +175,19 @@ public class BinaryJSONObject {
         }
     }
 
+    public BinaryJSONArray getBinaryJSONArray(String key) {
+        Object value = get(key);
+        if(value instanceof BinaryJSONArray) {
+            return (BinaryJSONArray) value;
+        } else {
+            throw new IllegalArgumentException("Value is not a BinaryJSONArray");
+        }
+    }
+
+    public boolean containsKey(String key) {
+        return keyValueMap.containsKey(key);
+    }
+
     public byte[] toByteArray() throws IOException {
         if(keyValueMap.isEmpty()) {
             return new byte[0];

@@ -80,6 +80,80 @@ public class BinaryJSONArray {
         return values.get(index);
     }
 
+    public byte[] getBytes(int index) {
+        Object value = values.get(index);
+        if (value instanceof byte[]) {
+            return (byte[]) value;
+        } else {
+            throw new IllegalArgumentException("Value at index " + index + " is not a byte array");
+        }
+    }
+
+    public byte getByte(int index) {
+        Object value = values.get(index);
+        if (value instanceof Byte) {
+            return (byte) value;
+        } else {
+            throw new IllegalArgumentException("Value at index " + index + " is not a byte");
+        }
+    }
+
+    public int getInt(int index) {
+        Object value = values.get(index);
+        if (value instanceof Integer) {
+            return (int) value;
+        } else {
+            throw new IllegalArgumentException("Value at index " + index + " is not an integer");
+        }
+    }
+
+    public long getLong(int index) {
+        Object value = values.get(index);
+        if (value instanceof Long) {
+            return (long) value;
+        } else {
+            throw new IllegalArgumentException("Value at index " + index + " is not a long");
+        }
+    }
+
+    public short getShort(int index) {
+        Object value = values.get(index);
+        if (value instanceof Short) {
+            return (short) value;
+        } else {
+            throw new IllegalArgumentException("Value at index " + index + " is not a short");
+        }
+    }
+
+    public boolean getBoolean(int index) {
+        Object value = values.get(index);
+        if (value instanceof Boolean) {
+            return (boolean) value;
+        } else {
+            throw new IllegalArgumentException("Value at index " + index + " is not a boolean");
+        }
+    }
+
+    public String getString(int index) {
+        Object value = values.get(index);
+        if (value instanceof String) {
+            return (String) value;
+        } else if (value instanceof byte[]) {
+            return new String((byte[]) value);
+        } else {
+            throw new IllegalArgumentException("Value at index " + index + " is not a string");
+        }
+    }
+
+    public String getBinaryJSONObject(int index) {
+        Object value = values.get(index);
+        if (value instanceof BinaryJSONObject) {
+            return ((BinaryJSONObject) value).toJsonObject().toString();
+        } else {
+            throw new IllegalArgumentException("Value at index " + index + " is not a BinaryJSONObject");
+        }
+    }
+
     public byte[] toByteArray() throws IOException {
         if(values.size() == 0) {
             return new byte[0];
