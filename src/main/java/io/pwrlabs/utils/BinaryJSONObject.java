@@ -110,6 +110,53 @@ public class BinaryJSONObject {
         return keyValueMap.get(key);
     }
 
+    public byte[] getBytes(String key) {
+        Object value = get(key);
+        if(value instanceof byte[]) {
+            return (byte[]) value;
+        } else {
+            throw new IllegalArgumentException("Value is not a byte array");
+        }
+    }
+
+    public String getString(String key) {
+        Object value = get(key);
+        if(value instanceof String) {
+            return (String) value;
+        } else if(value instanceof byte[]) {
+            return new String((byte[]) value);
+        } else {
+            throw new IllegalArgumentException("Value is not a string");
+        }
+    }
+
+    public boolean getBoolean(String key) {
+        Object value = get(key);
+        if(value instanceof Boolean) {
+            return (boolean) value;
+        } else {
+            throw new IllegalArgumentException("Value is not a boolean");
+        }
+    }
+
+    public short getShort(String key) {
+        Object value = get(key);
+        if(value instanceof Short) {
+            return (short) value;
+        } else {
+            throw new IllegalArgumentException("Value is not a short");
+        }
+    }
+
+    public byte getByte(String key) {
+        Object value = get(key);
+        if(value instanceof Byte) {
+            return (byte) value;
+        } else {
+            throw new IllegalArgumentException("Value is not a byte");
+        }
+    }
+
     public int getInt(String key) {
         Object value = get(key);
         if(value instanceof Integer) {
