@@ -6,6 +6,7 @@ import org.json.JSONArray;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.nio.ByteBuffer;
 
 public class BinaryJSONArray {
@@ -57,6 +58,12 @@ public class BinaryJSONArray {
                     break;
                 case 9: //Byte
                     values.add(buffer.get());
+                    break;
+                case 10: //BigInteger
+                    int valueLength5 = buffer.getInt();
+                    byte[] valueBytes5 = new byte[valueLength5];
+                    buffer.get(valueBytes5);
+                    values.add(new BigInteger(valueBytes5));
                     break;
                 default:
                     throw new IllegalArgumentException("Unsupported value type");
@@ -197,6 +204,11 @@ public class BinaryJSONArray {
             } else if (value instanceof Byte) {
                 bos.write(9); // Type
                 bos.write((byte) value);
+            } else if (value instanceof BigInteger) {
+                bos.write(10); // Type
+                byte[] valueBytes = ((BigInteger) value).toByteArray();
+                bos.write(ByteBuffer.allocate(4).putInt(valueBytes.length).array());
+                bos.write(valueBytes);
             } else {
                 throw new IllegalArgumentException("Unsupported value type");
             }
