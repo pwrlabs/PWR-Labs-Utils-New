@@ -156,7 +156,7 @@ public class BinaryJSONKeyMapper {
     public static final String TRANSACTIONS = "transactions";
     public static final String GUARDIAN_ADDRESS = "guardianAddress";
     public static final String GUARDIAN_EXPIRY_DATE = "guardianExpiryDate";
-    public static final String IP = "ip";
+    public static final String IP = "ipAddress";
     public static final String VALIDATOR_ADDRESS = "validatorAddress";
     public static final String FROM_VALIDATOR_ADDRESS = "fromValidatorAddress";
     public static final String TO_VALIDATOR_ADDRESS = "toValidatorAddress";
