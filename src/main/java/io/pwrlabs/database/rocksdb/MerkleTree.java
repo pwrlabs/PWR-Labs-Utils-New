@@ -338,7 +338,8 @@ public class MerkleTree {
     public byte[] getRootHash() {
         lock.readLock().lock();
         try {
-            return rootHash;
+            if(rootHash == null) return null;
+            else return Arrays.copyOf(rootHash, rootHash.length);
         } finally {
             lock.readLock().unlock();
         }
