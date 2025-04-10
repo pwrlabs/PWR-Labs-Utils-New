@@ -169,6 +169,8 @@ public class BinaryJSONKeyMapper {
     public static final String IS_PRIVATE = "isPrivate";
     public static final String PUBLIC_KEY = "publicKey";
     public static final String WITHDRAWN_PWR = "withdrawnPWR";
+    public static final String OWNER_CAN_TRANSFER_PWR = "ownerCanTransferPWR";
+    public static final String CONDUITS_CAN_TRANSFER_PWR = "conduitsCanTransferPWR";
 
     //endregion
 
