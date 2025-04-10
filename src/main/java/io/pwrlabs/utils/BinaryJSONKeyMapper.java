@@ -106,6 +106,7 @@ public class BinaryJSONKeyMapper {
 
     //region ==================== Constants ====================
     public static final String IDENTIFIER = "identifier";
+    public static final String PROCESSED = "processed";
     public static final String SENDER = "sender";
     public static final String RECEIVER = "receiver";
     public static final String TRANSACTION_HASH = "transactionHash";
@@ -176,6 +177,7 @@ public class BinaryJSONKeyMapper {
 
     static {
         addKey(IDENTIFIER);
+        addKey(PROCESSED);
         addKey(SENDER);
         addKey(RECEIVER);
         addKey(TRANSACTION_HASH);
