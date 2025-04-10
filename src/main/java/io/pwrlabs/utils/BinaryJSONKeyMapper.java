@@ -239,5 +239,7 @@ public class BinaryJSONKeyMapper {
         addKey(IS_PRIVATE);
         addKey(PUBLIC_KEY);
         addKey(WITHDRAWN_PWR);
+        addKey(OWNER_CAN_TRANSFER_PWR);
+        addKey(CONDUITS_CAN_TRANSFER_PWR);
     }
 }
