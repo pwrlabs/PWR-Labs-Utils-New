@@ -2,6 +2,7 @@ package io.pwrlabs.util.encoders;
 
 import io.pwrlabs.hashing.PWRHash;
 
+import java.math.BigInteger;
 import java.util.Arrays;
 
 public record ByteArrayWrapper(byte[] data) {
@@ -43,6 +44,10 @@ public record ByteArrayWrapper(byte[] data) {
         }
 
         return "0x" + result.toString();
+    }
+
+    public BigInteger toBigInteger() {
+        return new BigInteger(1, data);
     }
 
     @Override
