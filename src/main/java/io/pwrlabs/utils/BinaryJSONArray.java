@@ -210,7 +210,8 @@ public class BinaryJSONArray {
                 bos.write(ByteBuffer.allocate(4).putInt(valueBytes.length).array());
                 bos.write(valueBytes);
             } else {
-                throw new IllegalArgumentException("Unsupported value type");
+                String typeName = value.getClass().getSimpleName();
+                throw new IllegalArgumentException("Unsupported value type: " + typeName);
             }
         }
 
