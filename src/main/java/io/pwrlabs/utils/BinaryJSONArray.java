@@ -212,6 +212,7 @@ public class BinaryJSONArray {
             } else {
                 String typeName = value.getClass().getSimpleName();
                 throw new IllegalArgumentException("Unsupported value type: " + typeName);
+
             }
         }
 
