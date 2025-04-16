@@ -235,4 +235,9 @@ public class BinaryJSONArray {
 
         return jsonArray;
     }
+
+    @Override
+    public String toString() {
+        return toJsonArray().toString();
+    }
 }

@@ -288,4 +288,9 @@ public class BinaryJSONObject {
 
         return jsonObject;
     }
+
+    @Override
+    public String toString() {
+        return toJsonObject().toString();
+    }
 }
