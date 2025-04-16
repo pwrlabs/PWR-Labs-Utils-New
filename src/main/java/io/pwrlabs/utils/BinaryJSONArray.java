@@ -152,10 +152,10 @@ public class BinaryJSONArray {
         }
     }
 
-    public String getBinaryJSONObject(int index) {
+    public BinaryJSONObject getBinaryJSONObject(int index) {
         Object value = values.get(index);
         if (value instanceof BinaryJSONObject) {
-            return ((BinaryJSONObject) value).toJsonObject().toString();
+            return ((BinaryJSONObject) value);
         } else {
             throw new IllegalArgumentException("Value at index " + index + " is not a BinaryJSONObject");
         }
