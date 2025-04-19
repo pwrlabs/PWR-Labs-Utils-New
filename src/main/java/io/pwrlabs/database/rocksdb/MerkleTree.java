@@ -6,6 +6,7 @@ import io.pwrlabs.util.encoders.Hex;
 import io.pwrlabs.util.files.FileUtils;
 import lombok.Getter;
 import lombok.SneakyThrows;
+import org.json.JSONObject;
 import org.rocksdb.*;
 
 import java.io.File;
@@ -791,6 +792,17 @@ public class MerkleTree {
         } finally {
             lock.writeLock().unlock();
         }
+    }
+
+    public JSONObject getRamInfo() {
+        JSONObject json = new JSONObject();
+        json.put("treeName", treeName);
+        json.put("numLeaves", numLeaves);
+        json.put("depth", depth);
+        json.put("nodeCacheSize", nodesCache.size());
+        json.put("keyDataCacheSize", keyDataCache.size());
+        json.put("hangingNodesCacheSize", hangingNodes.size());
+        return json;
     }
 
     //endregion
