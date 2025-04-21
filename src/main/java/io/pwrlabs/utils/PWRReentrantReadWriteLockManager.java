@@ -49,7 +49,16 @@ public class PWRReentrantReadWriteLockManager {
      *         with the message "Lock with name [name] already exists"
      */
     public static synchronized PWRReentrantReadWriteLock createReadWriteLock(String name) {
-        errorIf(readWriteLocks.containsKey(name), "Lock with name " + name + " already exists");
+        WeakReference<PWRReentrantReadWriteLock> ref = readWriteLocks.get(name);
+        PWRReentrantReadWriteLock existingLock = (ref != null) ? ref.get() : null;
+
+        errorIf(existingLock != null, "Lock with name " + name + " already exists");
+
+        // If we get here, either no entry exists or the lock was garbage collected
+        if (ref != null && ref.get() == null) {
+            // Clean up the stale reference
+            readWriteLocks.remove(name);
+        }
 
         PWRReentrantReadWriteLock lock = new PWRReentrantReadWriteLock();
         readWriteLocks.put(name, new WeakReference<>(lock));
@@ -66,7 +75,20 @@ public class PWRReentrantReadWriteLockManager {
      *
      * @return A new ConcurrentHashMap containing all the currently managed locks, keyed by their names
      */
-    public Map<String, WeakReference<PWRReentrantReadWriteLock>> getReadWriteLocksCopy() {
-        return new ConcurrentHashMap<>(readWriteLocks);
+    public Map<String, PWRReentrantReadWriteLock> getReadWriteLocksCopy() {
+        Map<String, PWRReentrantReadWriteLock> result = new ConcurrentHashMap<>();
+
+        // Copy only locks that are still alive
+        for (Map.Entry<String, WeakReference<PWRReentrantReadWriteLock>> entry : readWriteLocks.entrySet()) {
+            PWRReentrantReadWriteLock lock = entry.getValue().get();
+            if (lock != null) {
+                result.put(entry.getKey(), lock);
+            } else {
+                // Clean up stale references
+                readWriteLocks.remove(entry.getKey());
+            }
+        }
+
+        return result;
     }
 }
