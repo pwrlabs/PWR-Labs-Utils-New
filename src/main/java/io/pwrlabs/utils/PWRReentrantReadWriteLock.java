@@ -29,6 +29,8 @@ public class PWRReentrantReadWriteLock {
      */
     private ReadWriteLock readWriteLock;
 
+    private ReadWriteLock fieldsLock = new ReentrantReadWriteLock();
+
     /**
      * Counter tracking the number of active read locks
      */
@@ -66,7 +68,12 @@ public class PWRReentrantReadWriteLock {
      * @return The thread that currently holds the write lock, or null if the write lock is not held
      */
     public Thread getWriteLockThread() {
-        return writeLockThread;
+        fieldsLock.readLock().lock();
+        try {
+            return writeLockThread;
+        } finally {
+            fieldsLock.readLock().unlock();
+        }
     }
 
     /**
@@ -76,10 +83,13 @@ public class PWRReentrantReadWriteLock {
      * or 0 if the lock is not currently held by any thread
      */
     public long getWriteLockTime() {
-        return writeLockTime;
+        fieldsLock.readLock().lock();
+        try {
+            return writeLockTime;
+        } finally {
+            fieldsLock.readLock().unlock();
+        }
     }
-
-    //isHeldByCurrentThread
 
     /**
      * Checks if the write lock is held by the current thread.
@@ -87,7 +97,12 @@ public class PWRReentrantReadWriteLock {
      * @return true if the write lock is held by the current thread, false otherwise
      */
     public boolean isHeldByCurrentThread() {
-        return writeLockThread == Thread.currentThread();
+        fieldsLock.readLock().lock();
+        try {
+            return writeLockThread == Thread.currentThread();
+        } finally {
+            fieldsLock.readLock().unlock();
+        }
     }
     //endregion
 
@@ -177,20 +192,25 @@ public class PWRReentrantReadWriteLock {
     }
     //endregion
 
-    public static void main(String[] args) {
-        //Tests
-        PWRReentrantReadWriteLock lock = new PWRReentrantReadWriteLock();
-        lock.acquireReadLock();
-        System.out.println("Read lock acquired");
-        System.out.println("Read lock count: " + lock.readLockCount.get());
-        lock.releaseReadLock();
-        System.out.println("Read lock released");
-        System.out.println("Read lock count: " + lock.readLockCount.get());
-        lock.acquireWriteLock();
-        System.out.println("Write lock acquired");
-        System.out.println("Write lock thread: " + lock.getWriteLockThread());
-        System.out.println("Write lock time: " + lock.getWriteLockTime());
-        lock.releaseWriteLock();
-        System.out.println("Write lock released");
+    //region ==================== Private Methods ========================
+    private void setWriteLockThread(Thread thread) {
+        errorIf(thread == null, "Thread cannot be null");
+        fieldsLock.writeLock().lock();
+        try {
+            this.writeLockThread = thread;
+        } finally {
+            fieldsLock.writeLock().unlock();
+        }
     }
+
+    private void setWriteLockTime(long time) {
+        errorIf(time < 0, "Time cannot be negative");
+        fieldsLock.writeLock().lock();
+        try {
+            this.writeLockTime = time;
+        } finally {
+            fieldsLock.writeLock().unlock();
+        }
+    }
+    //endregion
 }
