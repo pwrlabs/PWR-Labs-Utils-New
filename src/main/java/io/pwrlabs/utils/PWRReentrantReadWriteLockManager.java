@@ -1,5 +1,6 @@
 package io.pwrlabs.utils;
 
+import java.lang.ref.WeakReference;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.Lock;
@@ -34,7 +35,7 @@ public class PWRReentrantReadWriteLockManager {
      * Thread-safe map storing all managed read-write locks, keyed by their names.
      * ConcurrentHashMap is used to ensure thread safety for concurrent access.
      */
-    private static Map<String /*Lock Name*/, PWRReentrantReadWriteLock> readWriteLocks = new ConcurrentHashMap<>();
+    private static Map<String /*Lock Name*/, WeakReference<PWRReentrantReadWriteLock>> readWriteLocks = new ConcurrentHashMap<>();
 
     /**
      * Creates and registers a new {@link PWRReentrantReadWriteLock} with the specified name.
@@ -51,7 +52,7 @@ public class PWRReentrantReadWriteLockManager {
         errorIf(readWriteLocks.containsKey(name), "Lock with name " + name + " already exists");
 
         PWRReentrantReadWriteLock lock = new PWRReentrantReadWriteLock();
-        readWriteLocks.put(name, lock);
+        readWriteLocks.put(name, new WeakReference<>(lock));
 
         return lock;
     }
@@ -65,7 +66,7 @@ public class PWRReentrantReadWriteLockManager {
      *
      * @return A new ConcurrentHashMap containing all the currently managed locks, keyed by their names
      */
-    public Map<String, PWRReentrantReadWriteLock> getReadWriteLocksCopy() {
+    public Map<String, WeakReference<PWRReentrantReadWriteLock>> getReadWriteLocksCopy() {
         return new ConcurrentHashMap<>(readWriteLocks);
     }
 }

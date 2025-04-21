@@ -47,7 +47,7 @@ public class PWRReentrantReadWriteLock {
      * Creates a new PWRReentrantReadWriteLock instance.
      * Initializes the underlying read-write lock as a {@link java.util.concurrent.locks.ReentrantReadWriteLock}.
      */
-    public PWRReentrantReadWriteLock() {
+    protected PWRReentrantReadWriteLock() {
         this.readWriteLock = new java.util.concurrent.locks.ReentrantReadWriteLock();
     }
     //endregion
