@@ -71,6 +71,16 @@ public class PWRReentrantReadWriteLock {
     public long getWriteLockTime() {
         return writeLockTime;
     }
+
+    //isHeldByCurrentThread
+    /**
+     * Checks if the write lock is held by the current thread.
+     *
+     * @return true if the write lock is held by the current thread, false otherwise
+     */
+    public boolean isHeldByCurrentThread() {
+        return writeLockThread == Thread.currentThread();
+    }
     //endregion
 
     //region ==================== Public Methods ========================
