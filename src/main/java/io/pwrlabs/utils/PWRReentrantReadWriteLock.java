@@ -2,6 +2,10 @@ package io.pwrlabs.utils;
 
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+
+import static io.pwrlabs.newerror.NewError.errorIf;
 
 /**
  * A reentrant read-write lock implementation that extends Java's standard {@link ReadWriteLock} capabilities
@@ -29,6 +33,7 @@ public class PWRReentrantReadWriteLock {
      * Counter tracking the number of active read locks
      */
     private AtomicInteger readLockCount = new AtomicInteger(0);
+    private AtomicInteger writeLockCount = new AtomicInteger(0);
 
     /**
      * Reference to the thread currently holding the write lock, or null if no thread holds it
@@ -43,16 +48,18 @@ public class PWRReentrantReadWriteLock {
     //endregion
 
     //region ==================== Constructor ========================
+
     /**
      * Creates a new PWRReentrantReadWriteLock instance.
      * Initializes the underlying read-write lock as a {@link java.util.concurrent.locks.ReentrantReadWriteLock}.
      */
     protected PWRReentrantReadWriteLock() {
-        this.readWriteLock = new java.util.concurrent.locks.ReentrantReadWriteLock();
+        this.readWriteLock = new ReentrantReadWriteLock();
     }
     //endregion
 
     //region ==================== Public Getters ========================
+
     /**
      * Returns the thread that currently holds the write lock.
      *
@@ -66,13 +73,14 @@ public class PWRReentrantReadWriteLock {
      * Returns the timestamp when the write lock was last acquired.
      *
      * @return The time when the write lock was last acquired in nanoseconds,
-     *         or 0 if the lock is not currently held by any thread
+     * or 0 if the lock is not currently held by any thread
      */
     public long getWriteLockTime() {
         return writeLockTime;
     }
 
     //isHeldByCurrentThread
+
     /**
      * Checks if the write lock is held by the current thread.
      *
@@ -84,6 +92,7 @@ public class PWRReentrantReadWriteLock {
     //endregion
 
     //region ==================== Public Methods ========================
+
     /**
      * Acquires the read lock.
      *
@@ -127,8 +136,13 @@ public class PWRReentrantReadWriteLock {
      */
     public void acquireWriteLock() {
         readWriteLock.writeLock().lock();
-        writeLockThread = Thread.currentThread();
-        if(writeLockTime == 0) writeLockTime = System.nanoTime();
+
+        if(writeLockThread == null) {
+            writeLockThread = Thread.currentThread();
+            writeLockTime = System.nanoTime();
+        }
+
+        writeLockCount.incrementAndGet();
     }
 
     /**
@@ -139,23 +153,44 @@ public class PWRReentrantReadWriteLock {
      * @throws IllegalStateException if the current thread does not hold the write lock
      */
     public void releaseWriteLock() {
-        if(writeLockThread != Thread.currentThread()) {
-            throw new IllegalStateException("Current thread does not hold the write lock");
-        } else {
+        errorIf(writeLockThread == null, "Write lock is not held by any thread");
+        errorIf(writeLockThread != Thread.currentThread(), "Current thread does not hold the write lock");
+
+        if (writeLockCount.decrementAndGet() == 0) {
             writeLockThread = null;
             writeLockTime = 0;
-            readWriteLock.writeLock().unlock();
         }
+
+        readWriteLock.writeLock().unlock();
     }
 
     public boolean tryToAcquireWriteLock() {
-        if(readWriteLock.writeLock().tryLock()) {
-            writeLockThread = Thread.currentThread();
-            if(writeLockTime == 0) writeLockTime = System.nanoTime();
+        if (readWriteLock.writeLock().tryLock()) {
+            if (writeLockThread == null) {
+                writeLockThread = Thread.currentThread();
+                writeLockTime = System.nanoTime();
+            }
+            writeLockCount.incrementAndGet();
             return true;
-        } else {
-            return false;
         }
+        return false;
     }
     //endregion
+
+    public static void main(String[] args) {
+        //Tests
+        PWRReentrantReadWriteLock lock = new PWRReentrantReadWriteLock();
+        lock.acquireReadLock();
+        System.out.println("Read lock acquired");
+        System.out.println("Read lock count: " + lock.readLockCount.get());
+        lock.releaseReadLock();
+        System.out.println("Read lock released");
+        System.out.println("Read lock count: " + lock.readLockCount.get());
+        lock.acquireWriteLock();
+        System.out.println("Write lock acquired");
+        System.out.println("Write lock thread: " + lock.getWriteLockThread());
+        System.out.println("Write lock time: " + lock.getWriteLockTime());
+        lock.releaseWriteLock();
+        System.out.println("Write lock released");
+    }
 }
