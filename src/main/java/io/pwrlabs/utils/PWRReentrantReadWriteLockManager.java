@@ -75,7 +75,7 @@ public class PWRReentrantReadWriteLockManager {
      *
      * @return A new ConcurrentHashMap containing all the currently managed locks, keyed by their names
      */
-    public Map<String, PWRReentrantReadWriteLock> getReadWriteLocksCopy() {
+    public static Map<String, PWRReentrantReadWriteLock> getReadWriteLocksCopy() {
         Map<String, PWRReentrantReadWriteLock> result = new ConcurrentHashMap<>();
 
         // Copy only locks that are still alive
