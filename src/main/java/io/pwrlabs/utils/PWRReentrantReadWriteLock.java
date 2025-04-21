@@ -147,5 +147,15 @@ public class PWRReentrantReadWriteLock {
             readWriteLock.writeLock().unlock();
         }
     }
+
+    public boolean tryToAcquireWriteLock() {
+        if(readWriteLock.writeLock().tryLock()) {
+            writeLockThread = Thread.currentThread();
+            if(writeLockTime == 0) writeLockTime = System.nanoTime();
+            return true;
+        } else {
+            return false;
+        }
+    }
     //endregion
 }
