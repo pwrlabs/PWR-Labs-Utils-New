@@ -173,6 +173,7 @@ public class BinaryJSONKeyMapper {
     public static final String WITHDRAWN_PWR = "withdrawnPWR";
     public static final String OWNER_CAN_TRANSFER_PWR = "ownerCanTransferPWR";
     public static final String CONDUITS_CAN_TRANSFER_PWR = "conduitsCanTransferPWR";
+    public static final String REMAINING_DELEGATED_PWR  = "remainingDelegatedPWR";
 
     //endregion
 
@@ -246,5 +247,6 @@ public class BinaryJSONKeyMapper {
         addKey(WITHDRAWN_PWR);
         addKey(OWNER_CAN_TRANSFER_PWR);
         addKey(CONDUITS_CAN_TRANSFER_PWR);
+        addKey(REMAINING_DELEGATED_PWR);
     }
 }

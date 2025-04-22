@@ -242,45 +242,4 @@ public class PWRReentrantReadWriteLock {
     }
     //endregion
 
-    public static void main(String[] args) {
-        //Test
-        PWRReentrantReadWriteLock lock = new PWRReentrantReadWriteLock();
-        lock.acquireReadLock();
-        System.out.println("Read lock acquired");
-        System.out.println("Read lock count: " + lock.readLockCount.get());
-        lock.releaseReadLock();
-        System.out.println("Read lock released");
-        System.out.println("Read lock count: " + lock.readLockCount.get());
-        lock.acquireWriteLock();
-        System.out.println("Write lock acquired");
-        System.out.println("Write lock count: " + lock.writeLockCount.get());
-        System.out.println("Write lock thread: " + lock.getWriteLockThread());
-        System.out.println("Write lock time: " + lock.getWriteLockTime());
-        lock.releaseWriteLock();
-        System.out.println("Write lock released");
-        System.out.println("Write lock count: " + lock.writeLockCount.get());
-        System.out.println("Write lock thread: " + lock.getWriteLockThread());
-        System.out.println("Write lock time: " + lock.getWriteLockTime());
-        lock.acquireWriteLock();
-        System.out.println("Write lock acquired");
-        System.out.println("Write lock count: " + lock.writeLockCount.get());
-        System.out.println("Write lock thread: " + lock.getWriteLockThread());
-        System.out.println("Write lock time: " + lock.getWriteLockTime());
-        lock.acquireWriteLock();
-        System.out.println("Write lock acquired again");
-        System.out.println("Write lock count: " + lock.writeLockCount.get());
-        System.out.println("Write lock thread: " + lock.getWriteLockThread());
-        System.out.println("Write lock time: " + lock.getWriteLockTime());
-        lock.releaseWriteLock();
-        System.out.println("Write lock released first");
-        System.out.println("Write lock count: " + lock.writeLockCount.get());
-        System.out.println("Write lock thread: " + lock.getWriteLockThread());
-        System.out.println("Write lock time: " + lock.getWriteLockTime());
-        lock.releaseWriteLock();
-        System.out.println("Write lock released second");
-        System.out.println("Write lock count: " + lock.writeLockCount.get());
-        System.out.println("Write lock thread: " + lock.getWriteLockThread());
-        System.out.println("Write lock time: " + lock.getWriteLockTime());
-
-    }
 }
