@@ -135,6 +135,7 @@ public class BinaryJSONKeyMapper {
     public static final String BLOCK_REWARD = "blockReward";
     public static final String BURNED_FEES = "burnedFees";
     public static final String PROCESS_WITHOUT_CRITICAL_ERRORS = "processedWithoutCriticalErrors";
+    public static final String NEW_SHARES_PER_SPARK = "newSharesPerSpark";
 
     public static final String TITLE = "title";
     public static final String DESCRIPTION = "description";
@@ -208,6 +209,7 @@ public class BinaryJSONKeyMapper {
         addKey(BLOCK_REWARD);
         addKey(BURNED_FEES);
         addKey(PROCESS_WITHOUT_CRITICAL_ERRORS);
+        addKey(NEW_SHARES_PER_SPARK);
 
 
         addKey(TITLE);
