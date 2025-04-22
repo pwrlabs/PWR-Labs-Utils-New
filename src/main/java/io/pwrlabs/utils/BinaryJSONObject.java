@@ -191,6 +191,15 @@ public class BinaryJSONObject {
         }
     }
 
+    public BigInteger getBigInteger(String key) {
+        Object value = get(key);
+        if(value instanceof BigInteger) {
+            return (BigInteger) value;
+        } else {
+            throw new IllegalArgumentException("Value is not a BigInteger");
+        }
+    }
+
     public boolean containsKey(String key) {
         return keyValueMap.containsKey(key);
     }
