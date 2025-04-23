@@ -148,16 +148,6 @@ public class MerkleTree {
 
         // 8. Register instance
         openTrees.put(treeName, this);
-
-        //Shutdown hook
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                    try {
-                        close();
-                    } catch (RocksDBException e) {
-                        e.printStackTrace();
-                    }
-                })
-        );
     }
 
     //endregion
