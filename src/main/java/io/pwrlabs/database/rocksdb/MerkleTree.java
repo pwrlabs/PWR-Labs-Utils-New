@@ -13,6 +13,7 @@ import java.io.File;
 import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -71,181 +72,10 @@ public class MerkleTree {
     private int depth = 0;
     private byte[] rootHash = null;
 
-    private boolean closed = false;
+    private AtomicBoolean closed = new AtomicBoolean(false);
     //endregion
 
     //region ===================== Constructors =====================
-//    @SneakyThrows
-//    public MerkleTree(String treeName) {
-//        errorIf(openTrees.containsKey(treeName), "There is already open instance of this tree. 2 open instances of the same tree are not allowed at the same time");
-//        this.treeName = treeName;
-//
-//        Options options = new Options().setCreateIfMissing(true)
-//                .setMaxTotalWalSize(45 * 1024 * 1024L)  // Good: Limits total WAL to 512MB
-//                .setWalSizeLimitMB(15)                    // Good: Standard size per WAL file
-//                .setWalTtlSeconds(24 * 60 * 60)           // Good: Cleans up old WAL files after 24h
-//                .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL)  // Good: Minimizes logging overhead
-//                .setDbLogDir("")                          // Good: Disables separate log directory
-//                .setLogFileTimeToRoll(0);                 // Good: Immediate roll when size limit reached
-//
-//        // Add these additional safety options
-//        options.setAllowMmapReads(false)  // Disable memory mapping
-//                .setAllowMmapWrites(false)
-//                .setMaxOpenFiles(1000)
-//                .setMaxFileOpeningThreads(10)
-//                .setIncreaseParallelism(1); // Single-threaded mode is safer
-//
-//        options.setParanoidChecks(true)  // Enable paranoid checks for corruption
-//                .setUseDirectReads(true)  // Direct I/O for reads
-//                .setUseDirectIoForFlushAndCompaction(true)  // Direct I/O for writes
-//                .setEnableWriteThreadAdaptiveYield(true)
-//                .setAllowConcurrentMemtableWrite(true);
-//
-//        File directory = new File("merkleTree/");
-//        if(!directory.exists()) directory.mkdirs();
-//
-//        this.db = RocksDB.open(options, "merkleTree/" + treeName);
-//
-//        final ColumnFamilyDescriptor db1Descriptor =
-//                new ColumnFamilyDescriptor(METADATA_DB_NAME.getBytes());
-//        final ColumnFamilyDescriptor db2Descriptor =
-//                new ColumnFamilyDescriptor(NODES_DB_NAME.getBytes());
-//
-//        metaDataHandle = db.createColumnFamily(db1Descriptor);
-//        nodesHandle = db.createColumnFamily(db2Descriptor);
-//
-//        loadMetaData();
-//
-//        //Shutdown hook
-//        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-//                    try {
-//                        close();
-//                    } catch (RocksDBException e) {
-//                        e.printStackTrace();
-//                    }
-//                })
-//        );
-//
-//        openTrees.put(treeName, this);
-//    }
-
-//    public MerkleTree(String treeName) throws RocksDBException {
-//        RocksDB.loadLibrary();
-//        this.treeName = treeName;
-//        errorIf(openTrees.containsKey(treeName), "There is already open instance of this tree. 2 open instances of the same tree are not allowed at the same time");
-//
-//        DBOptions dbOptions = new DBOptions().setCreateIfMissing(true)
-//                .setMaxTotalWalSize(45 * 1024 * 1024L)  // Good: Limits total WAL to 512MB
-//                .setWalSizeLimitMB(15)                    // Good: Standard size per WAL file
-//                .setWalTtlSeconds(24 * 60 * 60)           // Good: Cleans up old WAL files after 24h
-//                .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL)  // Good: Minimizes logging overhead
-//                .setDbLogDir("")                          // Good: Disables separate log directory
-//                .setLogFileTimeToRoll(0);                 // Good: Immediate roll when size limit reached
-//
-//        // Add these additional safety options
-//        dbOptions.setAllowMmapReads(false)  // Disable memory mapping
-//                .setAllowMmapWrites(false)
-//                .setMaxOpenFiles(1000)
-//                .setMaxFileOpeningThreads(10)
-//                .setIncreaseParallelism(1); // Single-threaded mode is safer
-//
-//        dbOptions.setParanoidChecks(true)  // Enable paranoid checks for corruption
-//                .setUseDirectReads(true)  // Direct I/O for reads
-//                .setUseDirectIoForFlushAndCompaction(true)  // Direct I/O for writes
-//                .setEnableWriteThreadAdaptiveYield(true)
-//                .setAllowConcurrentMemtableWrite(true);
-//        // set your other options here...
-//
-//        String dbPath = "merkleTree/" + treeName;
-//
-//
-//        Options options = new Options().setCreateIfMissing(true)
-//                .setMaxTotalWalSize(45 * 1024 * 1024L)  // Good: Limits total WAL to 512MB
-//                .setWalSizeLimitMB(15)                    // Good: Standard size per WAL file
-//                .setWalTtlSeconds(24 * 60 * 60)           // Good: Cleans up old WAL files after 24h
-//                .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL)  // Good: Minimizes logging overhead
-//                .setDbLogDir("")                          // Good: Disables separate log directory
-//                .setLogFileTimeToRoll(0);                 // Good: Immediate roll when size limit reached
-//
-//        // Add these additional safety options
-//        options.setAllowMmapReads(false)  // Disable memory mapping
-//                .setAllowMmapWrites(false)
-//                .setMaxOpenFiles(1000)
-//                .setMaxFileOpeningThreads(10)
-//                .setIncreaseParallelism(1); // Single-threaded mode is safer
-//
-//        options.setParanoidChecks(true)  // Enable paranoid checks for corruption
-//                .setUseDirectReads(true)  // Direct I/O for reads
-//                .setUseDirectIoForFlushAndCompaction(true)  // Direct I/O for writes
-//                .setEnableWriteThreadAdaptiveYield(true)
-//                .setAllowConcurrentMemtableWrite(true);
-//
-//        // 1) Figure out which column families already exist
-//        List<byte[]> existingCFNames = RocksDB.listColumnFamilies(options, dbPath);
-//
-//        List<ColumnFamilyDescriptor> cfDescriptors = new ArrayList<>();
-//        if (existingCFNames.isEmpty()) {
-//            // Means this is a brand new DB -- no column families yet
-//            // We always need the default CF
-//            cfDescriptors.add(new ColumnFamilyDescriptor(
-//                    RocksDB.DEFAULT_COLUMN_FAMILY,
-//                    new ColumnFamilyOptions())
-//            );
-//
-//            // Also create metaData CF
-//            cfDescriptors.add(new ColumnFamilyDescriptor(
-//                    METADATA_DB_NAME.getBytes(),
-//                    new ColumnFamilyOptions())
-//            );
-//
-//            // Also create nodes CF
-//            cfDescriptors.add(new ColumnFamilyDescriptor(
-//                    NODES_DB_NAME.getBytes(),
-//                    new ColumnFamilyOptions())
-//            );
-//        } else {
-//            // We already have some (or all) CFs in the DB. We must open them *all*.
-//            for (byte[] cfName : existingCFNames) {
-//                cfDescriptors.add(
-//                        new ColumnFamilyDescriptor(cfName, new ColumnFamilyOptions())
-//                );
-//            }
-//        }
-//
-//        // 2) Open DB with all column family descriptors
-//        List<ColumnFamilyHandle> cfHandles = new ArrayList<>();
-//        this.db = RocksDB.open(dbOptions, dbPath, cfDescriptors, cfHandles);
-//
-//        // 3) Figure out which handle corresponds to metaData, which to nodes
-//        //    They come back in the same order we put them in cfDescriptors.
-//        for (int i = 0; i < cfDescriptors.size(); i++) {
-//            String cfName = new String(cfDescriptors.get(i).getName());
-//            if (cfName.equals(METADATA_DB_NAME)) {
-//                metaDataHandle = cfHandles.get(i);
-//            } else if (cfName.equals(NODES_DB_NAME)) {
-//                nodesHandle = cfHandles.get(i);
-//            } else if (cfName.equals("default")) {
-//                // If you need the default CF handle, grab it here
-//            }
-//        }
-//
-//        // If we found that we do NOT have metaDataHandle or nodesHandle yet (for example, an existing DB
-//        // had only a default CF), you can create them here:
-//        if (metaDataHandle == null) {
-//            metaDataHandle = db.createColumnFamily(
-//                    new ColumnFamilyDescriptor(METADATA_DB_NAME.getBytes(), new ColumnFamilyOptions())
-//            );
-//        }
-//        if (nodesHandle == null) {
-//            nodesHandle = db.createColumnFamily(
-//                    new ColumnFamilyDescriptor(NODES_DB_NAME.getBytes(), new ColumnFamilyOptions())
-//            );
-//        }
-//
-//        // 4) Proceed as normal (e.g. load metadata, etc.)
-//        loadMetaData();
-//    }
-
     public MerkleTree(String treeName) throws RocksDBException {
         RocksDB.loadLibrary();
         this.treeName = treeName;
@@ -337,6 +167,7 @@ public class MerkleTree {
      * Get the current root hash of the Merkle tree.
      */
     public byte[] getRootHash() {
+        errorIfClosed();
         lock.readLock().lock();
         try {
             if(rootHash == null) return null;
@@ -347,6 +178,7 @@ public class MerkleTree {
     }
 
     public int getNumLeaves() {
+        errorIfClosed();
         lock.readLock().lock();
         try {
             return numLeaves;
@@ -356,6 +188,7 @@ public class MerkleTree {
     }
 
     public int getDepth() {
+        errorIfClosed();
         lock.readLock().lock();
         try {
             return depth;
@@ -370,6 +203,7 @@ public class MerkleTree {
      * @throws RocksDBException If there's an error accessing RocksDB
      */
     public HashSet<Node> getAllNodes() throws RocksDBException {
+        errorIfClosed();
         lock.readLock().lock();
         try {
             HashSet<Node> allNodes = new HashSet<>();
@@ -406,6 +240,7 @@ public class MerkleTree {
      * @throws IllegalArgumentException If key is null
      */
     public byte[] getData(byte[] key) {
+        errorIfClosed();
         byte[] data = keyDataCache.get(new ByteArrayWrapper(key));
         if(data != null) return data;
 
@@ -427,6 +262,8 @@ public class MerkleTree {
      * @throws IllegalArgumentException If key or data is null
      */
     public void addOrUpdateData(byte[] key, byte[] data) throws RocksDBException {
+        errorIfClosed();
+
         if (key == null) {
             throw new IllegalArgumentException("Key cannot be null");
         }
@@ -464,6 +301,8 @@ public class MerkleTree {
     }
 
     public void revertUnsavedChanges() {
+        errorIfClosed();
+
         lock.writeLock().lock();
         try {
             nodesCache.clear();
@@ -479,6 +318,8 @@ public class MerkleTree {
     }
 
     public boolean containsKey(byte[] key) {
+        errorIfClosed();
+
         if (key == null) {
             throw new IllegalArgumentException("Key cannot be null");
         }
@@ -494,6 +335,7 @@ public class MerkleTree {
     }
 
     public List<byte[]> getAllKeys() {
+        errorIfClosed();
         lock.readLock().lock();
         try {
             List<byte[]> keys = new ArrayList<>();
@@ -511,6 +353,7 @@ public class MerkleTree {
     }
 
     public List<byte[]> getAllData() {
+        errorIfClosed();
         lock.readLock().lock();
         try {
             List<byte[]> data = new ArrayList<>();
@@ -531,6 +374,7 @@ public class MerkleTree {
      * Flush all in-memory changes (nodes, metadata) to RocksDB.
      */
     public void flushToDisk() throws RocksDBException {
+        errorIfClosed();
         lock.writeLock().lock();
         try {
             try (WriteBatch batch = new WriteBatch()) {
@@ -584,7 +428,7 @@ public class MerkleTree {
     public void close() throws RocksDBException {
         lock.writeLock().lock();
         try {
-            if(closed) return;
+            if(closed.get()) return;
             flushToDisk();
 
             if (metaDataHandle != null) {
@@ -620,13 +464,15 @@ public class MerkleTree {
             }
 
             openTrees.remove(treeName);
-            closed = true;
+            closed.set(true);
         } finally {
             lock.writeLock().unlock();
         }
     }
 
     public MerkleTree clone(String newTreeName) throws RocksDBException {
+        errorIfClosed();
+
         if(newTreeName == null || newTreeName.isEmpty()) {
             throw new IllegalArgumentException("New tree name cannot be null or empty");
         }
@@ -670,10 +516,11 @@ public class MerkleTree {
      * This is much faster than iterating through all entries and deleting them individually.
      */
     public void clear() {
+        errorIfClosed();
         lock.writeLock().lock();
         try {
             // First close the current DB
-            if (!closed) {
+            if (!closed.get()) {
                 // Close all column family handles
                 if (metaDataHandle != null) {
                     try {
@@ -783,9 +630,6 @@ public class MerkleTree {
                 this.metaDataHandle = cfHandles.get(1);
                 this.nodesHandle = cfHandles.get(2);
                 this.keyDataHandle = cfHandles.get(3);
-
-                // Reset closed flag
-                closed = false;
             } catch (RocksDBException e) {
                 throw new RuntimeException("Failed to re-initialize RocksDB after clearing: " + e.getMessage(), e);
             }
@@ -1018,6 +862,12 @@ public class MerkleTree {
             }
         } finally {
             lock.writeLock().unlock();
+        }
+    }
+
+    private void errorIfClosed() {
+        if (closed.get()) {
+            throw new IllegalStateException("MerkleTree is closed");
         }
     }
 
