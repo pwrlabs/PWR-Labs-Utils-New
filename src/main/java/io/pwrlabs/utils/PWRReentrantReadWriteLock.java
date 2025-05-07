@@ -242,4 +242,25 @@ public class PWRReentrantReadWriteLock {
     }
     //endregion
 
+    public static void main(String[] args) {
+        PWRReentrantReadWriteLock lock = new PWRReentrantReadWriteLock();
+        lock.acquireReadLock();
+        System.out.println("Read lock acquired");
+        lock.releaseReadLock();
+        System.out.println("Read lock released");
+
+        lock.acquireWriteLock();
+        System.out.println("Write lock acquired");
+        lock.releaseWriteLock();
+        System.out.println("Write lock released");
+
+        //Dead lock test
+        lock.acquireWriteLock();
+        lock.acquireReadLock();
+        System.out.println("No dead lock");
+
+        lock.releaseReadLock();
+        lock.releaseWriteLock();
+    }
+
 }
