@@ -406,6 +406,7 @@ public class MerkleTree {
                 }
 
                 nodesCache.clear();
+                keyDataCache.clear();
             }
         } finally {
             lock.writeLock().unlock();
