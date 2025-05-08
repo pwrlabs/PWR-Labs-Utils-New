@@ -57,12 +57,16 @@ public class MerkleTree {
     private ColumnFamilyHandle keyDataHandle;
 
 
-    /** Cache of loaded nodes (in-memory for quick access). */
+    /**
+     * Cache of loaded nodes (in-memory for quick access).
+     */
     private final Map<ByteArrayWrapper, Node> nodesCache = new ConcurrentHashMap<>();
 
     private final Map<ByteArrayWrapper /*Key*/, byte[] /*data*/> keyDataCache = new ConcurrentHashMap<>();
 
-    /** Lock for reading/writing to the tree. */
+    /**
+     * Lock for reading/writing to the tree.
+     */
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
     private final Map<Integer /*level*/, byte[]> hangingNodes = new ConcurrentHashMap<>();
@@ -88,36 +92,32 @@ public class MerkleTree {
             throw new RocksDBException("Failed to create directory: " + path);
         }
 
-        // 2. Configure DB options
+// Replace your current RocksDB configuration with these balanced settings
         DBOptions dbOptions = new DBOptions()
                 .setCreateIfMissing(true)
                 .setCreateMissingColumnFamilies(true)
-                .setParanoidChecks(true)
-                .setUseDirectReads(true)
-                .setUseDirectIoForFlushAndCompaction(true);
+                .setParanoidChecks(false)      // Reduced safety checks for performance
+                .setMaxOpenFiles(100)          // Balanced setting for 30+ trees
+                .setMaxTotalWalSize(10 * 1024 * 1024L)  // Reduced from 45MB to 10MB
+                .setWalSizeLimitMB(5)          // Reduced from 15MB to 5MB
+                .setInfoLogLevel(InfoLogLevel.ERROR_LEVEL);  // Minimal logging
 
-        dbOptions.setMaxTotalWalSize(45 * 1024 * 1024L)  // Good: Limits total WAL to 512MB
-                .setWalSizeLimitMB(15)                    // Good: Standard size per WAL file
-                .setWalTtlSeconds(24 * 60 * 60)           // Good: Cleans up old WAL files after 24h
-                .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL)  // Good: Minimizes logging overhead
-                .setDbLogDir("")                          // Good: Disables separate log directory
-                .setLogFileTimeToRoll(0);                 // Good: Immediate roll when size limit reached
+// Configure table options with bloom filters for faster lookups
+        BlockBasedTableConfig tableConfig = new BlockBasedTableConfig()
+                .setBlockCache(new LRUCache(8 * 1024 * 1024L))  // Shared 8MB block cache
+                .setFilterPolicy(new BloomFilter(10, false))    // Memory-efficient lookups
+                .setBlockSize(4 * 1024)        // 4KB blocks (smaller than default)
+                .setCacheIndexAndFilterBlocks(true)
+                .setPinL0FilterAndIndexBlocksInCache(true);
 
-        // Add these additional safety options
-        dbOptions.setAllowMmapReads(false)  // Disable memory mapping
-                .setAllowMmapWrites(false)
-                .setMaxOpenFiles(1000)
-                .setMaxFileOpeningThreads(10); // Single-threaded mode is safer
-
-        dbOptions.setUseDirectIoForFlushAndCompaction(true)  // Direct I/O for writes
-                .setEnableWriteThreadAdaptiveYield(true)
-                .setAllowConcurrentMemtableWrite(true);
-
-        // 3. Configure column family options
+// Configure column family options with smaller write buffers
         ColumnFamilyOptions cfOptions = new ColumnFamilyOptions()
-                .optimizeUniversalStyleCompaction()
-                .setWriteBufferSize(64 * 1024 * 1024L)  // 64MB memtable
-                .setMaxWriteBufferNumber(3)   ;
+                .setWriteBufferSize(4 * 1024 * 1024L)  // 4MB instead of 64MB
+                .setMaxWriteBufferNumber(2)    // 2 instead of 3
+                .setMinWriteBufferNumberToMerge(1)
+                .setTableFormatConfig(tableConfig)
+                .setCompressionType(CompressionType.LZ4_COMPRESSION)  // Fast compression
+                .setBottommostCompressionType(CompressionType.ZSTD_COMPRESSION);  // Better for cold data
 
         // 4. Prepare column families
         List<ColumnFamilyDescriptor> cfDescriptors = new ArrayList<>();
@@ -153,6 +153,7 @@ public class MerkleTree {
     //endregion
 
     //region ===================== Public Methods =====================
+
     /**
      * Get the current root hash of the Merkle tree.
      */
@@ -160,7 +161,7 @@ public class MerkleTree {
         errorIfClosed();
         lock.readLock().lock();
         try {
-            if(rootHash == null) return null;
+            if (rootHash == null) return null;
             else return Arrays.copyOf(rootHash, rootHash.length);
         } finally {
             lock.readLock().unlock();
@@ -189,6 +190,7 @@ public class MerkleTree {
 
     /**
      * Get all nodes saved on disk.
+     *
      * @return A list of all nodes in the tree
      * @throws RocksDBException If there's an error accessing RocksDB
      */
@@ -226,13 +228,13 @@ public class MerkleTree {
      *
      * @param key The key to retrieve data for
      * @return The data for the key, or null if the key doesn't exist
-     * @throws RocksDBException If there's an error accessing RocksDB
+     * @throws RocksDBException         If there's an error accessing RocksDB
      * @throws IllegalArgumentException If key is null
      */
     public byte[] getData(byte[] key) {
         errorIfClosed();
         byte[] data = keyDataCache.get(new ByteArrayWrapper(key));
-        if(data != null) return data;
+        if (data != null) return data;
 
         try {
             return db.get(keyDataHandle, key);
@@ -246,9 +248,9 @@ public class MerkleTree {
      * This will create a new leaf node with a hash derived from the key and data,
      * or update an existing leaf if the key already exists.
      *
-     * @param key The key to store data for
+     * @param key  The key to store data for
      * @param data The data to store
-     * @throws RocksDBException If there's an error accessing RocksDB
+     * @throws RocksDBException         If there's an error accessing RocksDB
      * @throws IllegalArgumentException If key or data is null
      */
     public void addOrUpdateData(byte[] key, byte[] data) throws RocksDBException {
@@ -270,7 +272,7 @@ public class MerkleTree {
             // Calculate hash from key and data
             byte[] newLeafHash = calculateLeafHash(key, data);
 
-            if(oldLeafHash != null && Arrays.equals(oldLeafHash, newLeafHash)) return;
+            if (oldLeafHash != null && Arrays.equals(oldLeafHash, newLeafHash)) return;
 
             // Store key-data mapping
             keyDataCache.put(new ByteArrayWrapper(key), data);
@@ -397,7 +399,7 @@ public class MerkleTree {
                     }
                 }
 
-                for(Map.Entry<ByteArrayWrapper, byte[]> entry : keyDataCache.entrySet()) {
+                for (Map.Entry<ByteArrayWrapper, byte[]> entry : keyDataCache.entrySet()) {
                     batch.put(keyDataHandle, entry.getKey().data(), entry.getValue());
                 }
 
@@ -419,7 +421,7 @@ public class MerkleTree {
     public void close() throws RocksDBException {
         lock.writeLock().lock();
         try {
-            if(closed.get()) return;
+            if (closed.get()) return;
             flushToDisk();
 
             if (metaDataHandle != null) {
@@ -464,7 +466,7 @@ public class MerkleTree {
     public MerkleTree clone(String newTreeName) throws RocksDBException {
         errorIfClosed();
 
-        if(newTreeName == null || newTreeName.isEmpty()) {
+        if (newTreeName == null || newTreeName.isEmpty()) {
             throw new IllegalArgumentException("New tree name cannot be null or empty");
         }
 
@@ -643,6 +645,7 @@ public class MerkleTree {
     //endregion
 
     //region ===================== Private Methods =====================
+
     /**
      * Load the tree's metadata from RocksDB.
      */
@@ -722,9 +725,9 @@ public class MerkleTree {
         byte[] right = hasRight ? new byte[HASH_LENGTH] : null;
         byte[] parent = hasParent ? new byte[HASH_LENGTH] : null;
 
-        if (hasLeft)  buffer.get(left);
+        if (hasLeft) buffer.get(left);
         if (hasRight) buffer.get(right);
-        if (hasParent)buffer.get(parent);
+        if (hasParent) buffer.get(parent);
 
         return new Node(hash, left, right, parent);
     }
@@ -796,7 +799,7 @@ public class MerkleTree {
         try {
             Node leaf = getNodeByHash(oldLeafHash);
 
-            if(leaf == null) {
+            if (leaf == null) {
                 throw new IllegalArgumentException("Leaf not found: " + Hex.toHexString(oldLeafHash));
             } else {
                 leaf.updateNodeHash(newLeafHash);
@@ -830,7 +833,7 @@ public class MerkleTree {
                     node.setParentNodeHash(parentNode.hash);
                     addNode(level + 1, parentNode);
                 }
-            } else if(hangingNode.parent == null) {
+            } else if (hangingNode.parent == null) {
                 Node parent = new Node(hangingNode.hash, node.hash);
                 hangingNode.setParentNodeHash(parent.hash);
                 node.setParentNodeHash(parent.hash);
@@ -865,6 +868,7 @@ public class MerkleTree {
     //endregion
 
     //region ===================== Nested Classes =====================
+
     /**
      * Represents a single node in the Merkle Tree.
      */
@@ -876,10 +880,10 @@ public class MerkleTree {
         private byte[] parent;
 
         /**
-         *  The old hash of the node before it was updated. This is used to delete the old node from the db.
-         * */
+         * The old hash of the node before it was updated. This is used to delete the old node from the db.
+         */
         @Getter
-       private byte[] nodeHashToRemoveFromDb = null;
+        private byte[] nodeHashToRemoveFromDb = null;
 
         /**
          * Construct a leaf node with a known hash.
@@ -1003,8 +1007,8 @@ public class MerkleTree {
                 byte[] oldHash = Arrays.copyOf(this.hash, this.hash.length);
                 this.hash = newHash;
 
-                for(Map.Entry<Integer, byte[]> entry : hangingNodes.entrySet()) {
-                    if(Arrays.equals(entry.getValue(), oldHash)) {
+                for (Map.Entry<Integer, byte[]> entry : hangingNodes.entrySet()) {
+                    if (Arrays.equals(entry.getValue(), oldHash)) {
                         hangingNodes.put(entry.getKey(), newHash);
                         break;
                     }
@@ -1021,14 +1025,14 @@ public class MerkleTree {
                 if (isRoot) {
                     rootHash = newHash;
 
-                    if(left != null) {
+                    if (left != null) {
                         Node leftNode = getNodeByHash(left);
                         if (leftNode != null) {
                             leftNode.setParentNodeHash(newHash);
                         }
                     }
 
-                    if(right != null) {
+                    if (right != null) {
                         Node rightNode = getNodeByHash(right);
                         if (rightNode != null) {
                             rightNode.setParentNodeHash(newHash);
@@ -1101,7 +1105,7 @@ public class MerkleTree {
             lock.writeLock().lock();
             try {
                 Node leafNode = getNodeByHash(leafHash);
-                if(leafNode == null) {
+                if (leafNode == null) {
                     throw new IllegalArgumentException("Leaf node not found: " + Hex.toHexString(leafHash));
                 }
 
@@ -1137,44 +1141,44 @@ public class MerkleTree {
             Node other = (Node) obj;
 
             // Compare hash - this is the most important field
-            if(this.hash == null && other.hash != null) {
+            if (this.hash == null && other.hash != null) {
                 return false;
-            } else if(this.hash != null && other.hash == null) {
+            } else if (this.hash != null && other.hash == null) {
                 return false;
-            } else if(this.hash != null && other.hash != null) {
-                if(!Arrays.equals(this.hash, other.hash)) {
+            } else if (this.hash != null && other.hash != null) {
+                if (!Arrays.equals(this.hash, other.hash)) {
                     return false;
                 }
             }
 
             // Compare left child reference
-            if(this.left == null && other.left != null) {
+            if (this.left == null && other.left != null) {
                 return false;
-            } else if(this.left != null && other.left == null) {
+            } else if (this.left != null && other.left == null) {
                 return false;
-            } else if(this.left != null && other.left != null) {
-                if(!Arrays.equals(this.left, other.left)) {
+            } else if (this.left != null && other.left != null) {
+                if (!Arrays.equals(this.left, other.left)) {
                     return false;
                 }
             }
 
             // Compare right child reference
-            if(this.right == null && other.right != null) {
+            if (this.right == null && other.right != null) {
                 return false;
-            } else if(this.right != null && other.right == null) {
+            } else if (this.right != null && other.right == null) {
                 return false;
-            } else if(this.right != null && other.right != null) {
-                if(!Arrays.equals(this.right, other.right)) {
+            } else if (this.right != null && other.right != null) {
+                if (!Arrays.equals(this.right, other.right)) {
                     return false;
                 }
             }
 
-            if(this.parent == null && other.parent != null) {
+            if (this.parent == null && other.parent != null) {
                 return false;
-            } else if(this.parent != null && other.parent == null) {
+            } else if (this.parent != null && other.parent == null) {
                 return false;
-            } else if(this.parent != null && other.parent != null) {
-                if(!Arrays.equals(this.parent, other.parent)) {
+            } else if (this.parent != null && other.parent != null) {
+                if (!Arrays.equals(this.parent, other.parent)) {
                     return false;
                 }
             }
