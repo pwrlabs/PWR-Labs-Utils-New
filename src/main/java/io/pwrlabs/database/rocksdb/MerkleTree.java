@@ -94,32 +94,45 @@ public class MerkleTree {
             throw new RocksDBException("Failed to create directory: " + path);
         }
 
-// Replace your current RocksDB configuration with these balanced settings
+        // Extreme memory conservation settings
         DBOptions dbOptions = new DBOptions()
                 .setCreateIfMissing(true)
                 .setCreateMissingColumnFamilies(true)
-                .setParanoidChecks(false)      // Reduced safety checks for performance
-                .setMaxOpenFiles(100)          // Balanced setting for 30+ trees
-                .setMaxTotalWalSize(10 * 1024 * 1024L)  // Reduced from 45MB to 10MB
-                .setWalSizeLimitMB(5)          // Reduced from 15MB to 5MB
-                .setInfoLogLevel(InfoLogLevel.ERROR_LEVEL);  // Minimal logging
+                .setParanoidChecks(false)
+                .setMaxOpenFiles(10)         // Minimum reasonable value
+                .setMaxTotalWalSize(1 * 1024 * 1024L)  // 1MB total WAL size
+                .setWalSizeLimitMB(1)        // 1MB per WAL file
+                .setInfoLogLevel(InfoLogLevel.ERROR_LEVEL)
+                .setMaxBackgroundJobs(1)     // Minimize background threads
+                .setAvoidFlushDuringShutdown(false)
+                .setStatsDumpPeriodSec(0)    // Disable stats dumping
+                .setDelayedWriteRate(2 * 1024 * 1024); // Slow down writes when needed
 
-// Configure table options with bloom filters for faster lookups
+        // No block cache configuration - completely disable caching
         BlockBasedTableConfig tableConfig = new BlockBasedTableConfig()
-                .setBlockCache(new LRUCache(8 * 1024 * 1024L))  // Shared 8MB block cache
-                .setFilterPolicy(new BloomFilter(10, false))    // Memory-efficient lookups
-                .setBlockSize(4 * 1024)        // 4KB blocks (smaller than default)
-                .setCacheIndexAndFilterBlocks(true)
-                .setPinL0FilterAndIndexBlocksInCache(true);
+                .setBlockCache(new LRUCache(512 * 1024L))  // Minimal 512KB cache
+                .setNoBlockCache(false)      // Can't disable completely, but set very small
+                .setFilterPolicy(null)       // Disable bloom filters completely
+                .setBlockSize(1 * 1024)      // 1KB blocks (very small)
+                .setCacheIndexAndFilterBlocks(false)
+                .setIndexType(IndexType.kBinarySearch) // Uses less memory than hash
+                .setWholeKeyFiltering(true);
 
-// Configure column family options with smaller write buffers
+        // Minimal write buffer configuration
         ColumnFamilyOptions cfOptions = new ColumnFamilyOptions()
-                .setWriteBufferSize(4 * 1024 * 1024L)  // 4MB instead of 64MB
-                .setMaxWriteBufferNumber(2)    // 2 instead of 3
+                .setWriteBufferSize(1 * 1024 * 1024L)  // 1MB write buffer
+                .setMaxWriteBufferNumber(1)  // Only one buffer
                 .setMinWriteBufferNumberToMerge(1)
+                .setCompressionType(CompressionType.ZSTD_COMPRESSION) // Best compression
+                .setBottommostCompressionType(CompressionType.ZSTD_COMPRESSION)
+                .setCompressionOptions(new CompressionOptions().setMaxDictBytes(4 * 1024))
                 .setTableFormatConfig(tableConfig)
-                .setCompressionType(CompressionType.LZ4_COMPRESSION)  // Fast compression
-                .setBottommostCompressionType(CompressionType.ZSTD_COMPRESSION);  // Better for cold data
+                .setOptimizeFiltersForHits(true)
+                .setMemtablePrefixBloomSizeRatio(0) // Disable memtable bloom filter
+                .setMemtableHugePageSize(0)
+                .setArenaBlockSize(256 * 1024)       // Smaller arena blocks
+                .setMaxSuccessiveMerges(1)           // Minimize merges
+                .setInplaceUpdateSupport(false);     // Save memory by disabling
 
         // 4. Prepare column families
         List<ColumnFamilyDescriptor> cfDescriptors = new ArrayList<>();
@@ -150,8 +163,14 @@ public class MerkleTree {
 
         // 8. Register instance
         openTrees.put(treeName, this);
-    }
 
+        // 9. Force manual compaction on startup to reduce memory footprint
+        try {
+            db.compactRange();
+        } catch (Exception e) {
+            // Ignore compaction errors
+        }
+    }
     //endregion
 
     //region ===================== Public Methods =====================
