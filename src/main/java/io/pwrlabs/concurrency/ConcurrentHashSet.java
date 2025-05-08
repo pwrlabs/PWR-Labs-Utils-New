@@ -31,6 +31,17 @@ public class ConcurrentHashSet<T> {
         }
     }
 
+    /**
+     * Removes any elements that do not match the condition*/
+    public void removeIf(java.util.function.Predicate<? super T> filter) {
+        lock.writeLock().lock();
+        try {
+            set.removeIf(filter);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
     public boolean contains(T element) {
         lock.readLock().lock();
         try {
