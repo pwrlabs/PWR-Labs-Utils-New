@@ -1,6 +1,7 @@
 package io.pwrlabs.util.encoders;
 
 import io.pwrlabs.hashing.PWRHash;
+import io.pwrlabs.utils.ObjectsInMemoryTracker;
 
 import java.math.BigInteger;
 import java.util.Arrays;
@@ -10,6 +11,7 @@ public record ByteArrayWrapper(byte[] data) {
     private static final char[] HEX_ARRAY = "0123456789ABCDEF".toCharArray();
 
     public ByteArrayWrapper {
+        ObjectsInMemoryTracker.trackObject(this);
         if (data == null) {
             throw new NullPointerException();
         }
