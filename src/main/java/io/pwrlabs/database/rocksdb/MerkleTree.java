@@ -460,9 +460,9 @@ public class MerkleTree {
 
         if (destDir.exists()) {
             FileUtils.deleteDirectory(destDir);
-        } else {
-            destDir.mkdirs();
         }
+
+        destDir.mkdirs();
 
         lock.writeLock().lock();
         try {
