@@ -459,9 +459,7 @@ public class MerkleTree {
         File destDir = new File("merkleTree/" + newTreeName);
 
         if (destDir.exists()) {
-            FileUtils.emptyDirectory(destDir);
-        } else {
-            destDir.mkdirs();
+            FileUtils.deleteDirectory(destDir);
         }
 
         lock.writeLock().lock();
@@ -1131,4 +1129,12 @@ public class MerkleTree {
     }
     //endregion
 
+    public static void main(String[] args) throws Exception {
+        MerkleTree tree = new MerkleTree("tree1");
+        tree.addOrUpdateData("key1".getBytes(), "value1".getBytes());
+
+        MerkleTree tree2 = tree.clone("tree2");
+        System.out.println(Hex.toHexString(tree2.getData("key1".getBytes())));
+        System.out.println("ok");
+    }
 }
