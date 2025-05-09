@@ -95,45 +95,49 @@ public class MerkleTree {
             throw new RocksDBException("Failed to create directory: " + path);
         }
 
-// Balanced configuration: memory-efficient with better I/O and compute
+// DBOptions - Critical Memory Constraints
         DBOptions dbOptions = new DBOptions()
                 .setCreateIfMissing(true)
                 .setCreateMissingColumnFamilies(true)
-                .setParanoidChecks(false)
-                .setMaxOpenFiles(50)         // Increased from 10 to 50 for better file handling
-                .setMaxTotalWalSize(2 * 1024 * 1024L)  // 2MB total WAL size for better write throughput
-                .setWalSizeLimitMB(1)        // Keep 1MB per WAL file
-                .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL)  // Minimal logging
-                .setMaxBackgroundJobs(2)     // Slight increase for better background operations
-                .setAvoidFlushDuringShutdown(false)
-                .setStatsDumpPeriodSec(0)    // Disable stats dumping
-                .setAllowConcurrentMemtableWrite(true)  // Better write concurrency
-                .setEnableWriteThreadAdaptiveYield(true)  // Better thread utilization
-                .setDelayedWriteRate(4 * 1024 * 1024);  // Slightly higher rate for bursts
+                .setParanoidChecks(false) // Disable for memory savings
+                .setMaxOpenFiles(50) // Reduce file handle overhead
+                .setMaxTotalWalSize(32 * 1024 * 1024L) // 32MB total WAL
+                .setWalSizeLimitMB(16) // 16MB per WAL file
+                .setWalTtlSeconds(1800) // 30-minute retention
+                .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL) // Minimal logging
+                .setMaxBackgroundJobs(2) // Minimal background threads
+                .setMaxSubcompactions(1) // No parallel compaction
+                .setAllowConcurrentMemtableWrite(false) // Reduce concurrency buffers
+                .setDelayedWriteRate(8 * 1024 * 1024) // 8MB/s write throttling
+                .setBytesPerSync(1 * 1024 * 1024) // 1MB sync chunks
+                .setDbWriteBufferSize(64 * 1024 * 1024); // Global buffer cap
 
-// No block cache configuration - maintain no caching approach
+// Table Format - Minimal Overhead
         BlockBasedTableConfig tableConfig = new BlockBasedTableConfig()
-                .setNoBlockCache(true)       // Keep disabling block cache
-                .setFilterPolicy(null)       // Keep disabling bloom filters
-                .setBlockSize(4 * 1024)      // Maintain 4KB blocks - good balance
-                .setCacheIndexAndFilterBlocks(false)
-                .setWholeKeyFiltering(true);
+                .setNoBlockCache(true)
+                .setBlockSize(2 * 1024) // 2KB blocks
+                .setFormatVersion(5)
+                .setChecksumType(ChecksumType.kxxHash)
+                .setEnableIndexCompression(false);
 
-// Balanced write buffer configuration
+// Column Family Options - Aggressive Memory Limits
         ColumnFamilyOptions cfOptions = new ColumnFamilyOptions()
-                .setWriteBufferSize(5 * 1024 * 1024L)  // Keep your 5MB buffer size
-                .setMaxWriteBufferNumber(1)  // Keep single buffer for memory efficiency
+                .setWriteBufferSize(8 * 1024 * 1024) // 8MB per memtable
+                .setMaxWriteBufferNumber(2) // Max 2 memtables
                 .setMinWriteBufferNumberToMerge(1)
-                .setLevelCompactionDynamicLevelBytes(true)  // Better LSM-tree organization
-                .setTargetFileSizeBase(2 * 1024 * 1024)  // 2MB target for better compaction
-                .setCompressionOptions(new CompressionOptions().setMaxDictBytes(4 * 1024))
+                .setLevelCompactionDynamicLevelBytes(true)
+                .setTargetFileSizeBase(4 * 1024 * 1024) // 4MB SST files
+                .setMaxBytesForLevelBase(32 * 1024 * 1024) // 32MB L1
+                .setCompressionType(CompressionType.NO_COMPRESSION)
+                .setMemTableConfig(new VectorMemTableConfig()
+                        .setReservedSize(1 * 1024 * 1024) // 1MB pre-alloc
+                )
                 .setTableFormatConfig(tableConfig)
-                .setOptimizeFiltersForHits(true)
-                .setMemtablePrefixBloomSizeRatio(0)  // Keep disabled
-                .setMemtableHugePageSize(0)
-                .setArenaBlockSize(256 * 1024)       // Keep smaller arena blocks
-                .setMaxSuccessiveMerges(1)           // Keep minimizing merges
-                .setInplaceUpdateSupport(false);     // Keep disabled
+                .setOptimizeFiltersForHits(true);
+
+// Write Buffer Manager - Strict Global Limit
+        WriteBufferManager writeBufferManager = new WriteBufferManager(45 * 1024 * 1024, null); // 45MB limit, no cache
+        dbOptions.setWriteBufferManager(writeBufferManager);
 
         // 4. Prepare column families
         List<ColumnFamilyDescriptor> cfDescriptors = new ArrayList<>();
