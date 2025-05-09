@@ -100,7 +100,7 @@ public class MerkleTree {
                 .setCreateIfMissing(true)
                 .setCreateMissingColumnFamilies(true)
                 .setUseDirectReads(true)
-                .setAllowMmapReads(true)
+                .setAllowMmapReads(false)
                 .setUseDirectIoForFlushAndCompaction(true)
                 .setMaxOpenFiles(100)
                 .setMaxBackgroundJobs(1)
