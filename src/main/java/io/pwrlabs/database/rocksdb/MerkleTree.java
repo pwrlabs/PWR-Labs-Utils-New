@@ -1,6 +1,7 @@
 package io.pwrlabs.database.rocksdb;
 
 import io.pwrlabs.hashing.PWRHash;
+import io.pwrlabs.util.encoders.BiResult;
 import io.pwrlabs.util.encoders.ByteArrayWrapper;
 import io.pwrlabs.util.encoders.Hex;
 import io.pwrlabs.util.files.FileUtils;
@@ -378,6 +379,26 @@ public class MerkleTree {
                 }
             }
             return data;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    public BiResult<List<byte[]>, List<byte[]>> keysAndTheirValues() {
+        errorIfClosed();
+        lock.readLock().lock();
+        try {
+            List<byte[]> keys = new ArrayList<>();
+            List<byte[]> values = new ArrayList<>();
+            try (RocksIterator iterator = db.newIterator(keyDataHandle)) {
+                iterator.seekToFirst();
+                while (iterator.isValid()) {
+                    keys.add(iterator.key());
+                    values.add(iterator.value());
+                    iterator.next();
+                }
+            }
+            return new BiResult<>(keys, values);
         } finally {
             lock.readLock().unlock();
         }
