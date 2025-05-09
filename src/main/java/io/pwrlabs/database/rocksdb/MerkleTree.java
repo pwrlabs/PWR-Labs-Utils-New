@@ -95,49 +95,35 @@ public class MerkleTree {
             throw new RocksDBException("Failed to create directory: " + path);
         }
 
-// DBOptions - Critical Memory Constraints
+// 1) DBOptions
         DBOptions dbOptions = new DBOptions()
                 .setCreateIfMissing(true)
                 .setCreateMissingColumnFamilies(true)
-                .setParanoidChecks(false) // Disable for memory savings
-                .setMaxOpenFiles(50) // Reduce file handle overhead
-                .setMaxTotalWalSize(32 * 1024 * 1024L) // 32MB total WAL
-                .setWalSizeLimitMB(16) // 16MB per WAL file
-                .setWalTtlSeconds(1800) // 30-minute retention
-                .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL) // Minimal logging
-                .setMaxBackgroundJobs(2) // Minimal background threads
-                .setMaxSubcompactions(1) // No parallel compaction
-                .setAllowConcurrentMemtableWrite(false) // Reduce concurrency buffers
-                .setDelayedWriteRate(8 * 1024 * 1024) // 8MB/s write throttling
-                .setBytesPerSync(1 * 1024 * 1024) // 1MB sync chunks
-                .setDbWriteBufferSize(64 * 1024 * 1024); // Global buffer cap
-
-// Table Format - Minimal Overhead
+                .setUseDirectReads(true)
+                .setAllowMmapReads(true)
+                .setUseDirectIoForFlushAndCompaction(true)
+                .setMaxOpenFiles(100)
+                .setMaxBackgroundJobs(1)
+                .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL)
+                .setMaxManifestFileSize(64L * 1024 * 1024)  // e.g. 64 MB
+                .setMaxTotalWalSize(250L * 1024 * 1024)  // total WAL across all CFs ≤ 250 MB
+                .setWalSizeLimitMB(250)                 // (optional) per-WAL-file soft limit
+                .setKeepLogFileNum(3);    // keep at most 3 WAL files, regardless of age/size
+// 2) Table format: no cache, small blocks
         BlockBasedTableConfig tableConfig = new BlockBasedTableConfig()
                 .setNoBlockCache(true)
-                .setBlockSize(2 * 1024) // 2KB blocks
+                .setBlockSize(4 * 1024)        // 4 KB blocks
                 .setFormatVersion(5)
-                .setChecksumType(ChecksumType.kxxHash)
-                .setEnableIndexCompression(false);
+                .setChecksumType(ChecksumType.kxxHash);
 
-// Column Family Options - Aggressive Memory Limits
+// 3) ColumnFamilyOptions: no compression, single write buffer
         ColumnFamilyOptions cfOptions = new ColumnFamilyOptions()
-                .setWriteBufferSize(8 * 1024 * 1024) // 8MB per memtable
-                .setMaxWriteBufferNumber(2) // Max 2 memtables
-                .setMinWriteBufferNumberToMerge(1)
-                .setLevelCompactionDynamicLevelBytes(true)
-                .setTargetFileSizeBase(4 * 1024 * 1024) // 4MB SST files
-                .setMaxBytesForLevelBase(32 * 1024 * 1024) // 32MB L1
-                .setCompressionType(CompressionType.NO_COMPRESSION)
-                .setMemTableConfig(new VectorMemTableConfig()
-                        .setReservedSize(1 * 1024 * 1024) // 1MB pre-alloc
-                )
                 .setTableFormatConfig(tableConfig)
-                .setOptimizeFiltersForHits(true);
-
-// Write Buffer Manager - Strict Global Limit
-        WriteBufferManager writeBufferManager = new WriteBufferManager(45 * 1024 * 1024, null); // 45MB limit, no cache
-        dbOptions.setWriteBufferManager(writeBufferManager);
+                .setCompressionType(CompressionType.NO_COMPRESSION)
+                .setWriteBufferSize(16 * 1024 * 1024)  // 16 MB memtable
+                .setMaxWriteBufferNumber(1)
+                .setMinWriteBufferNumberToMerge(1)
+                .optimizeUniversalStyleCompaction();
 
         // 4. Prepare column families
         List<ColumnFamilyDescriptor> cfDescriptors = new ArrayList<>();
