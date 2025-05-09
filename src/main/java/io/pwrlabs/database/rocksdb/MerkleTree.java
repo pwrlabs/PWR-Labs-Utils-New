@@ -459,10 +459,10 @@ public class MerkleTree {
         File destDir = new File("merkleTree/" + newTreeName);
 
         if (destDir.exists()) {
-            FileUtils.deleteDirectory(destDir);
+            FileUtils.emptyDirectory(destDir);
+        } else {
+            destDir.mkdirs();
         }
-
-        destDir.mkdirs();
 
         lock.writeLock().lock();
         try {
