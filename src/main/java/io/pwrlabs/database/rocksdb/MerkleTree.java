@@ -94,45 +94,45 @@ public class MerkleTree {
             throw new RocksDBException("Failed to create directory: " + path);
         }
 
-        // Extreme memory conservation settings
+// Balanced configuration: memory-efficient with better I/O and compute
         DBOptions dbOptions = new DBOptions()
                 .setCreateIfMissing(true)
                 .setCreateMissingColumnFamilies(true)
                 .setParanoidChecks(false)
-                .setMaxOpenFiles(10)         // Minimum reasonable value
-                .setMaxTotalWalSize(1 * 1024 * 1024L)  // 1MB total WAL size
-                .setWalSizeLimitMB(1)        // 1MB per WAL file
-                .setInfoLogLevel(InfoLogLevel.ERROR_LEVEL)
-                .setMaxBackgroundJobs(1)     // Minimize background threads
+                .setMaxOpenFiles(50)         // Increased from 10 to 50 for better file handling
+                .setMaxTotalWalSize(2 * 1024 * 1024L)  // 2MB total WAL size for better write throughput
+                .setWalSizeLimitMB(1)        // Keep 1MB per WAL file
+                .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL)  // Minimal logging
+                .setMaxBackgroundJobs(2)     // Slight increase for better background operations
                 .setAvoidFlushDuringShutdown(false)
                 .setStatsDumpPeriodSec(0)    // Disable stats dumping
-                .setDelayedWriteRate(2 * 1024 * 1024); // Slow down writes when needed
+                .setAllowConcurrentMemtableWrite(true)  // Better write concurrency
+                .setEnableWriteThreadAdaptiveYield(true)  // Better thread utilization
+                .setDelayedWriteRate(4 * 1024 * 1024);  // Slightly higher rate for bursts
 
-        // No block cache configuration - completely disable caching
+// No block cache configuration - maintain no caching approach
         BlockBasedTableConfig tableConfig = new BlockBasedTableConfig()
-                .setBlockCache(new LRUCache(512 * 1024L))  // Minimal 512KB cache
-                .setNoBlockCache(false)      // Can't disable completely, but set very small
-                .setFilterPolicy(null)       // Disable bloom filters completely
-                .setBlockSize(1 * 1024)      // 1KB blocks (very small)
+                .setNoBlockCache(true)       // Keep disabling block cache
+                .setFilterPolicy(null)       // Keep disabling bloom filters
+                .setBlockSize(4 * 1024)      // Maintain 4KB blocks - good balance
                 .setCacheIndexAndFilterBlocks(false)
-                .setIndexType(IndexType.kBinarySearch) // Uses less memory than hash
                 .setWholeKeyFiltering(true);
 
-        // Minimal write buffer configuration
+// Balanced write buffer configuration
         ColumnFamilyOptions cfOptions = new ColumnFamilyOptions()
-                .setWriteBufferSize(1 * 1024 * 1024L)  // 1MB write buffer
-                .setMaxWriteBufferNumber(1)  // Only one buffer
+                .setWriteBufferSize(5 * 1024 * 1024L)  // Keep your 5MB buffer size
+                .setMaxWriteBufferNumber(1)  // Keep single buffer for memory efficiency
                 .setMinWriteBufferNumberToMerge(1)
-                .setCompressionType(CompressionType.ZSTD_COMPRESSION) // Best compression
-                .setBottommostCompressionType(CompressionType.ZSTD_COMPRESSION)
+                .setLevelCompactionDynamicLevelBytes(true)  // Better LSM-tree organization
+                .setTargetFileSizeBase(2 * 1024 * 1024)  // 2MB target for better compaction
                 .setCompressionOptions(new CompressionOptions().setMaxDictBytes(4 * 1024))
                 .setTableFormatConfig(tableConfig)
                 .setOptimizeFiltersForHits(true)
-                .setMemtablePrefixBloomSizeRatio(0) // Disable memtable bloom filter
+                .setMemtablePrefixBloomSizeRatio(0)  // Keep disabled
                 .setMemtableHugePageSize(0)
-                .setArenaBlockSize(256 * 1024)       // Smaller arena blocks
-                .setMaxSuccessiveMerges(1)           // Minimize merges
-                .setInplaceUpdateSupport(false);     // Save memory by disabling
+                .setArenaBlockSize(256 * 1024)       // Keep smaller arena blocks
+                .setMaxSuccessiveMerges(1)           // Keep minimizing merges
+                .setInplaceUpdateSupport(false);     // Keep disabled
 
         // 4. Prepare column families
         List<ColumnFamilyDescriptor> cfDescriptors = new ArrayList<>();
