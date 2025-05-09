@@ -508,24 +508,18 @@ public class MerkleTree {
             existingTree.close();
         }
 
+        File destDir = new File("merkleTree/" + newTreeName);
+
+        if (destDir.exists()) {
+            FileUtils.deleteDirectory(destDir);
+        }
+
         lock.writeLock().lock();
         try {
             flushToDisk();
 
-            File origDir = new File(path);
-            File destDir = new File("merkleTree/" + newTreeName);
             try (Checkpoint checkpoint = Checkpoint.create(db)) {
-                if (destDir.exists()) {
-                    FileUtils.deleteDirectory(destDir);
-                } else {
-                    destDir.mkdirs();
-                    FileUtils.deleteDirectory(destDir);
-                }
-
-                if (origDir.exists()) {
-                    // Create a checkpoint and copy the state to the destination directory
-                    checkpoint.createCheckpoint(destDir.getAbsolutePath());
-                }
+                checkpoint.createCheckpoint(destDir.getAbsolutePath());
             } catch (Exception e) {
                 e.printStackTrace();
                 throw new RuntimeException(e);
@@ -603,37 +597,38 @@ public class MerkleTree {
                     throw new RocksDBException("Failed to create directory: " + treeDir.getPath());
                 }
 
-                // Configure DB options
+// 1) DBOptions
                 DBOptions dbOptions = new DBOptions()
                         .setCreateIfMissing(true)
                         .setCreateMissingColumnFamilies(true)
-                        .setParanoidChecks(true)
                         .setUseDirectReads(true)
-                        .setUseDirectIoForFlushAndCompaction(true);
-
-                // Re-apply all the options from the constructor
-                dbOptions.setMaxTotalWalSize(45 * 1024 * 1024L)
-                        .setWalSizeLimitMB(15)
-                        .setWalTtlSeconds(24 * 60 * 60)
+                        .setAllowMmapReads(false)
+                        .setUseDirectIoForFlushAndCompaction(true)
+                        .setMaxOpenFiles(100)
+                        .setMaxBackgroundJobs(1)
                         .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL)
-                        .setDbLogDir("")
-                        .setLogFileTimeToRoll(0);
+                        .setMaxManifestFileSize(64L * 1024 * 1024)  // e.g. 64 MB
+                        .setMaxTotalWalSize(250L * 1024 * 1024)  // total WAL across all CFs ≤ 250 MB
+                        .setWalSizeLimitMB(250)                 // (optional) per-WAL-file soft limit
+                        .setKeepLogFileNum(3);    // keep at most 3 WAL files, regardless of age/size
 
-                dbOptions.setAllowMmapReads(false)
-                        .setAllowMmapWrites(false)
-                        .setMaxOpenFiles(1000)
-                        .setMaxFileOpeningThreads(10);
+// 2) Table format: no cache, small blocks
+                BlockBasedTableConfig tableConfig = new BlockBasedTableConfig()
+                        .setNoBlockCache(true)
+                        .setBlockSize(4 * 1024)        // 4 KB blocks
+                        .setFormatVersion(5)
+                        .setChecksumType(ChecksumType.kxxHash);
 
-                dbOptions.setEnableWriteThreadAdaptiveYield(true)
-                        .setAllowConcurrentMemtableWrite(true);
-
-                // Configure column family options
+// 3) ColumnFamilyOptions: no compression, single write buffer
                 ColumnFamilyOptions cfOptions = new ColumnFamilyOptions()
-                        .optimizeUniversalStyleCompaction()
-                        .setWriteBufferSize(64 * 1024 * 1024L)
-                        .setMaxWriteBufferNumber(3);
+                        .setTableFormatConfig(tableConfig)
+                        .setCompressionType(CompressionType.NO_COMPRESSION)
+                        .setWriteBufferSize(16 * 1024 * 1024)  // 16 MB memtable
+                        .setMaxWriteBufferNumber(1)
+                        .setMinWriteBufferNumberToMerge(1)
+                        .optimizeUniversalStyleCompaction();
 
-                // Prepare column families
+                // 4. Prepare column families
                 List<ColumnFamilyDescriptor> cfDescriptors = new ArrayList<>();
                 List<ColumnFamilyHandle> cfHandles = new ArrayList<>();
 
@@ -649,10 +644,10 @@ public class MerkleTree {
                 cfDescriptors.add(new ColumnFamilyDescriptor(
                         KEY_DATA_DB_NAME.getBytes(), cfOptions));
 
-                // Open a fresh DB with all column families
-                this.db = RocksDB.open(dbOptions, treeDir.getPath(), cfDescriptors, cfHandles);
+                // 5. Open DB with all column families
+                this.db = RocksDB.open(dbOptions, path, cfDescriptors, cfHandles);
 
-                // Assign handles
+                // 6. Assign handles
                 this.metaDataHandle = cfHandles.get(1);
                 this.nodesHandle = cfHandles.get(2);
                 this.keyDataHandle = cfHandles.get(3);
