@@ -12,6 +12,7 @@ import org.json.JSONObject;
 import org.rocksdb.*;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -444,7 +445,7 @@ public class MerkleTree {
         }
     }
 
-    public MerkleTree clone(String newTreeName) throws RocksDBException {
+    public MerkleTree clone(String newTreeName) throws RocksDBException, IOException {
         errorIfClosed();
 
         if (newTreeName == null || newTreeName.isEmpty()) {
@@ -460,6 +461,14 @@ public class MerkleTree {
 
         if (destDir.exists()) {
             FileUtils.deleteDirectory(destDir);
+        } else {
+            // If the directory has sub-directories then create them without creating the directory itself
+            File parent = destDir.getParentFile();
+            if (parent != null && !parent.exists()) {
+                if (!parent.mkdirs()) {
+                    throw new IOException("Failed to create parent directories for " + destDir);
+                }
+            }
         }
 
         lock.writeLock().lock();
@@ -1130,10 +1139,10 @@ public class MerkleTree {
     //endregion
 
     public static void main(String[] args) throws Exception {
-        MerkleTree tree = new MerkleTree("tree1");
+        MerkleTree tree = new MerkleTree("bro/tree1");
         tree.addOrUpdateData("key1".getBytes(), "value1".getBytes());
 
-        MerkleTree tree2 = tree.clone("tree2");
+        MerkleTree tree2 = tree.clone("bro/tree2");
         System.out.println(Hex.toHexString(tree2.getData("key1".getBytes())));
         System.out.println("ok");
     }
