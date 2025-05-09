@@ -109,6 +109,7 @@ public class MerkleTree {
                 .setMaxTotalWalSize(250L * 1024 * 1024)  // total WAL across all CFs ≤ 250 MB
                 .setWalSizeLimitMB(250)                 // (optional) per-WAL-file soft limit
                 .setKeepLogFileNum(3);    // keep at most 3 WAL files, regardless of age/size
+
 // 2) Table format: no cache, small blocks
         BlockBasedTableConfig tableConfig = new BlockBasedTableConfig()
                 .setNoBlockCache(true)
