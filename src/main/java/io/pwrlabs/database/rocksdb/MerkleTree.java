@@ -95,60 +95,8 @@ public class MerkleTree {
             throw new RocksDBException("Failed to create directory: " + path);
         }
 
-// 1) DBOptions
-        DBOptions dbOptions = new DBOptions()
-                .setCreateIfMissing(true)
-                .setCreateMissingColumnFamilies(true)
-                .setUseDirectReads(true)
-                .setAllowMmapReads(false)
-                .setUseDirectIoForFlushAndCompaction(true)
-                .setMaxOpenFiles(100)
-                .setMaxBackgroundJobs(1)
-                .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL)
-                .setMaxManifestFileSize(64L * 1024 * 1024)  // e.g. 64 MB
-                .setMaxTotalWalSize(250L * 1024 * 1024)  // total WAL across all CFs ≤ 250 MB
-                .setWalSizeLimitMB(250)                 // (optional) per-WAL-file soft limit
-                .setKeepLogFileNum(3);    // keep at most 3 WAL files, regardless of age/size
-
-// 2) Table format: no cache, small blocks
-        BlockBasedTableConfig tableConfig = new BlockBasedTableConfig()
-                .setNoBlockCache(true)
-                .setBlockSize(4 * 1024)        // 4 KB blocks
-                .setFormatVersion(5)
-                .setChecksumType(ChecksumType.kxxHash);
-
-// 3) ColumnFamilyOptions: no compression, single write buffer
-        ColumnFamilyOptions cfOptions = new ColumnFamilyOptions()
-                .setTableFormatConfig(tableConfig)
-                .setCompressionType(CompressionType.NO_COMPRESSION)
-                .setWriteBufferSize(16 * 1024 * 1024)  // 16 MB memtable
-                .setMaxWriteBufferNumber(1)
-                .setMinWriteBufferNumberToMerge(1)
-                .optimizeUniversalStyleCompaction();
-
-        // 4. Prepare column families
-        List<ColumnFamilyDescriptor> cfDescriptors = new ArrayList<>();
-        List<ColumnFamilyHandle> cfHandles = new ArrayList<>();
-
-        // Always need default CF
-        cfDescriptors.add(new ColumnFamilyDescriptor(
-                RocksDB.DEFAULT_COLUMN_FAMILY, cfOptions));
-
-        // Our custom CFs
-        cfDescriptors.add(new ColumnFamilyDescriptor(
-                METADATA_DB_NAME.getBytes(), cfOptions));
-        cfDescriptors.add(new ColumnFamilyDescriptor(
-                NODES_DB_NAME.getBytes(), cfOptions));
-        cfDescriptors.add(new ColumnFamilyDescriptor(
-                KEY_DATA_DB_NAME.getBytes(), cfOptions));
-
-        // 5. Open DB with all column families
-        this.db = RocksDB.open(dbOptions, path, cfDescriptors, cfHandles);
-
-        // 6. Assign handles
-        this.metaDataHandle = cfHandles.get(1);
-        this.nodesHandle = cfHandles.get(2);
-        this.keyDataHandle = cfHandles.get(3);
+        // 2. Initialize DB
+        initializeDb();
 
         // 7. Load initial metadata
         loadMetaData();
@@ -535,125 +483,31 @@ public class MerkleTree {
      * Efficiently clears the entire MerkleTree by closing, deleting and recreating the RocksDB instance.
      * This is much faster than iterating through all entries and deleting them individually.
      */
-    public void clear() {
+    public void clear() throws RocksDBException {
         errorIfClosed();
         lock.writeLock().lock();
         try {
-            // First close the current DB
-            if (!closed.get()) {
-                // Close all column family handles
-                if (metaDataHandle != null) {
-                    try {
-                        metaDataHandle.close();
-                    } catch (Exception e) {
-                        // Log error but continue
-                    }
-                    metaDataHandle = null;
-                }
+            // mark every key in each CF as deleted (empty → 0xFF)
+            byte[] start = new byte[0];
+            byte[] end   = new byte[]{(byte)0xFF};
 
-                if (nodesHandle != null) {
-                    try {
-                        nodesHandle.close();
-                    } catch (Exception e) {
-                        // Log error but continue
-                    }
-                    nodesHandle = null;
-                }
+            // these three calls are each O(1)
+            db.deleteRange(metaDataHandle, start, end);
+            db.deleteRange(nodesHandle,    start, end);
+            db.deleteRange(keyDataHandle,  start, end);
 
-                if (keyDataHandle != null) {
-                    try {
-                        keyDataHandle.close();
-                    } catch (Exception e) {
-                        // Log error but continue
-                    }
-                    keyDataHandle = null;
-                }
+            // OPTIONAL: reclaim space immediately
+            db.compactRange(metaDataHandle);
+            db.compactRange(nodesHandle);
+            db.compactRange(keyDataHandle);
 
-                if (db != null) {
-                    try {
-                        db.close();
-                    } catch (Exception e) {
-                        // Log error but continue
-                    }
-                }
-            }
-
-            // Clear in-memory structures
+            // reset your in-memory state
             nodesCache.clear();
-            hangingNodes.clear();
             keyDataCache.clear();
-            rootHash = null;
-            numLeaves = 0;
-            depth = 0;
+            hangingNodes.clear();
+            rootHash  = null;
+            numLeaves = depth = 0;
 
-            // Delete the directory
-            File treeDir = new File("merkleTree/" + treeName);
-            FileUtils.deleteDirectory(treeDir);
-
-            // Re-open a fresh DB
-            try {
-                // Ensure directory exists
-                if (!treeDir.exists() && !treeDir.mkdirs()) {
-                    throw new RocksDBException("Failed to create directory: " + treeDir.getPath());
-                }
-
-// 1) DBOptions
-                DBOptions dbOptions = new DBOptions()
-                        .setCreateIfMissing(true)
-                        .setCreateMissingColumnFamilies(true)
-                        .setUseDirectReads(true)
-                        .setAllowMmapReads(false)
-                        .setUseDirectIoForFlushAndCompaction(true)
-                        .setMaxOpenFiles(100)
-                        .setMaxBackgroundJobs(1)
-                        .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL)
-                        .setMaxManifestFileSize(64L * 1024 * 1024)  // e.g. 64 MB
-                        .setMaxTotalWalSize(250L * 1024 * 1024)  // total WAL across all CFs ≤ 250 MB
-                        .setWalSizeLimitMB(250)                 // (optional) per-WAL-file soft limit
-                        .setKeepLogFileNum(3);    // keep at most 3 WAL files, regardless of age/size
-
-// 2) Table format: no cache, small blocks
-                BlockBasedTableConfig tableConfig = new BlockBasedTableConfig()
-                        .setNoBlockCache(true)
-                        .setBlockSize(4 * 1024)        // 4 KB blocks
-                        .setFormatVersion(5)
-                        .setChecksumType(ChecksumType.kxxHash);
-
-// 3) ColumnFamilyOptions: no compression, single write buffer
-                ColumnFamilyOptions cfOptions = new ColumnFamilyOptions()
-                        .setTableFormatConfig(tableConfig)
-                        .setCompressionType(CompressionType.NO_COMPRESSION)
-                        .setWriteBufferSize(16 * 1024 * 1024)  // 16 MB memtable
-                        .setMaxWriteBufferNumber(1)
-                        .setMinWriteBufferNumberToMerge(1)
-                        .optimizeUniversalStyleCompaction();
-
-                // 4. Prepare column families
-                List<ColumnFamilyDescriptor> cfDescriptors = new ArrayList<>();
-                List<ColumnFamilyHandle> cfHandles = new ArrayList<>();
-
-                // Always need default CF
-                cfDescriptors.add(new ColumnFamilyDescriptor(
-                        RocksDB.DEFAULT_COLUMN_FAMILY, cfOptions));
-
-                // Our custom CFs
-                cfDescriptors.add(new ColumnFamilyDescriptor(
-                        METADATA_DB_NAME.getBytes(), cfOptions));
-                cfDescriptors.add(new ColumnFamilyDescriptor(
-                        NODES_DB_NAME.getBytes(), cfOptions));
-                cfDescriptors.add(new ColumnFamilyDescriptor(
-                        KEY_DATA_DB_NAME.getBytes(), cfOptions));
-
-                // 5. Open DB with all column families
-                this.db = RocksDB.open(dbOptions, path, cfDescriptors, cfHandles);
-
-                // 6. Assign handles
-                this.metaDataHandle = cfHandles.get(1);
-                this.nodesHandle = cfHandles.get(2);
-                this.keyDataHandle = cfHandles.get(3);
-            } catch (RocksDBException e) {
-                throw new RuntimeException("Failed to re-initialize RocksDB after clearing: " + e.getMessage(), e);
-            }
         } finally {
             lock.writeLock().unlock();
         }
@@ -674,6 +528,62 @@ public class MerkleTree {
 
     //region ===================== Private Methods =====================
 
+    private void initializeDb() throws RocksDBException {
+        // 1) DBOptions
+        DBOptions dbOptions = new DBOptions()
+                .setCreateIfMissing(true)
+                .setCreateMissingColumnFamilies(true)
+                .setUseDirectReads(true)
+                .setAllowMmapReads(false)
+                .setUseDirectIoForFlushAndCompaction(true)
+                .setMaxOpenFiles(100)
+                .setMaxBackgroundJobs(1)
+                .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL)
+                .setMaxManifestFileSize(64L * 1024 * 1024)  // e.g. 64 MB
+                .setMaxTotalWalSize(250L * 1024 * 1024)  // total WAL across all CFs ≤ 250 MB
+                .setWalSizeLimitMB(250)                 // (optional) per-WAL-file soft limit
+                .setKeepLogFileNum(3);    // keep at most 3 WAL files, regardless of age/size
+
+// 2) Table format: no cache, small blocks
+        BlockBasedTableConfig tableConfig = new BlockBasedTableConfig()
+                .setNoBlockCache(true)
+                .setBlockSize(4 * 1024)        // 4 KB blocks
+                .setFormatVersion(5)
+                .setChecksumType(ChecksumType.kxxHash);
+
+// 3) ColumnFamilyOptions: no compression, single write buffer
+        ColumnFamilyOptions cfOptions = new ColumnFamilyOptions()
+                .setTableFormatConfig(tableConfig)
+                .setCompressionType(CompressionType.NO_COMPRESSION)
+                .setWriteBufferSize(16 * 1024 * 1024)  // 16 MB memtable
+                .setMaxWriteBufferNumber(1)
+                .setMinWriteBufferNumberToMerge(1)
+                .optimizeUniversalStyleCompaction();
+
+        // 4. Prepare column families
+        List<ColumnFamilyDescriptor> cfDescriptors = new ArrayList<>();
+        List<ColumnFamilyHandle> cfHandles = new ArrayList<>();
+
+        // Always need default CF
+        cfDescriptors.add(new ColumnFamilyDescriptor(
+                RocksDB.DEFAULT_COLUMN_FAMILY, cfOptions));
+
+        // Our custom CFs
+        cfDescriptors.add(new ColumnFamilyDescriptor(
+                METADATA_DB_NAME.getBytes(), cfOptions));
+        cfDescriptors.add(new ColumnFamilyDescriptor(
+                NODES_DB_NAME.getBytes(), cfOptions));
+        cfDescriptors.add(new ColumnFamilyDescriptor(
+                KEY_DATA_DB_NAME.getBytes(), cfOptions));
+
+        // 5. Open DB with all column families
+        this.db = RocksDB.open(dbOptions, path, cfDescriptors, cfHandles);
+
+        // 6. Assign handles
+        this.metaDataHandle = cfHandles.get(1);
+        this.nodesHandle = cfHandles.get(2);
+        this.keyDataHandle = cfHandles.get(3);
+    }
     /**
      * Load the tree's metadata from RocksDB.
      */
