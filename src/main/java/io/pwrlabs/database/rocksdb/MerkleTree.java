@@ -64,15 +64,9 @@ public class MerkleTree {
      * Cache of loaded nodes (in-memory for quick access).
      */
     private final Map<ByteArrayWrapper, Node> nodesCache = new ConcurrentHashMap<>();
-
+    private final Map<Integer /*level*/, byte[]> hangingNodes = new ConcurrentHashMap<>();
     private final Map<ByteArrayWrapper /*Key*/, byte[] /*data*/> keyDataCache = new ConcurrentHashMap<>();
 
-    /**
-     * Lock for reading/writing to the tree.
-     */
-    private final ReadWriteLock lock = new ReentrantReadWriteLock();
-
-    private final Map<Integer /*level*/, byte[]> hangingNodes = new ConcurrentHashMap<>();
     @Getter
     private int numLeaves = 0;
     @Getter
@@ -80,6 +74,11 @@ public class MerkleTree {
     private byte[] rootHash = null;
 
     private AtomicBoolean closed = new AtomicBoolean(false);
+    private AtomicBoolean hasUnsavedChanges = new AtomicBoolean(false);
+    /**
+     * Lock for reading/writing to the tree.
+     */
+    private final ReadWriteLock lock = new ReentrantReadWriteLock();
     //endregion
 
     //region ===================== Constructors =====================
@@ -125,6 +124,18 @@ public class MerkleTree {
         try {
             if (rootHash == null) return null;
             else return Arrays.copyOf(rootHash, rootHash.length);
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    public byte[] getRootHashSavedOnDisk() {
+        errorIfClosed();
+        lock.readLock().lock();
+        try {
+            return db.get(metaDataHandle, KEY_ROOT_HASH.getBytes());
+        } catch (RocksDBException e) {
+            throw new RuntimeException(e);
         } finally {
             lock.readLock().unlock();
         }
@@ -238,6 +249,7 @@ public class MerkleTree {
 
             // Store key-data mapping
             keyDataCache.put(new ByteArrayWrapper(key), data);
+            hasUnsavedChanges.set(true);
 
             if (oldLeafHash == null) {
                 // Key doesn't exist, add new leaf
@@ -247,14 +259,13 @@ public class MerkleTree {
                 // First get the old leaf hash
                 updateLeaf(oldLeafHash, newLeafHash);
             }
-
-            flushToDisk();
         } finally {
             lock.writeLock().unlock();
         }
     }
 
     public void revertUnsavedChanges() {
+        if(!hasUnsavedChanges.get()) return;
         errorIfClosed();
 
         lock.writeLock().lock();
@@ -264,6 +275,8 @@ public class MerkleTree {
             keyDataCache.clear();
 
             loadMetaData();
+
+            hasUnsavedChanges.set(false);
         } catch (RocksDBException e) {
             throw new RuntimeException(e);
         } finally {
@@ -391,6 +404,7 @@ public class MerkleTree {
 
                 nodesCache.clear();
                 keyDataCache.clear();
+                hasUnsavedChanges.set(false);
             }
         } finally {
             lock.writeLock().unlock();
@@ -491,6 +505,64 @@ public class MerkleTree {
         }
     }
 
+    public void update(MerkleTree sourceTree) throws RocksDBException, IOException {
+        errorIfClosed();
+        lock.writeLock().lock();
+        sourceTree.lock.writeLock().lock();
+        try {
+            if (sourceTree == null) {
+                throw new IllegalArgumentException("Source tree cannot be null");
+            }
+
+            if(Arrays.equals(getRootHashSavedOnDisk(), sourceTree.getRootHashSavedOnDisk())) {
+                //This means that this tree is already a copy of the source tree and we only need to replace the cache
+                copyCache(sourceTree);
+            } else {
+                if(metaDataHandle != null) {
+                    metaDataHandle.close();
+                    metaDataHandle = null;
+                }
+                if(nodesHandle != null) {
+                    nodesHandle.close();
+                    nodesHandle = null;
+                }
+                if(keyDataHandle != null) {
+                    keyDataHandle.close();
+                    keyDataHandle = null;
+                }
+                if(db != null && !db.isClosed()) {
+                        db.close();
+                        db = null;
+                };
+
+                sourceTree.flushToDisk();
+
+                File thisTreesDirectory = new File(path);
+                FileUtils.deleteDirectory(thisTreesDirectory);
+
+                try (Checkpoint checkpoint = Checkpoint.create(sourceTree.db)) {
+                    checkpoint.createCheckpoint(thisTreesDirectory.getAbsolutePath());
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    throw new RuntimeException(e);
+                }
+
+                // Reinitialize the database
+                initializeDb();
+                loadMetaData();
+
+                nodesCache.clear();
+                keyDataCache.clear();
+                hangingNodes.clear();
+                hasUnsavedChanges.set(false);
+            }
+
+        } finally {
+            sourceTree.lock.writeLock().unlock();
+            lock.writeLock().unlock();
+        }
+    }
+
     /**
      * Efficiently clears the entire MerkleTree by closing, deleting and recreating the RocksDB instance.
      * This is much faster than iterating through all entries and deleting them individually.
@@ -519,6 +591,7 @@ public class MerkleTree {
             hangingNodes.clear();
             rootHash  = null;
             numLeaves = depth = 0;
+            hasUnsavedChanges.set(false);
 
         } finally {
             lock.writeLock().unlock();
@@ -815,6 +888,29 @@ public class MerkleTree {
         }
     }
 
+    private void copyCache(MerkleTree sourceTree) {
+        nodesCache.clear();
+        keyDataCache.clear();
+        hangingNodes.clear();
+
+        for (Map.Entry<ByteArrayWrapper, Node> entry : sourceTree.nodesCache.entrySet()) {
+            nodesCache.put(entry.getKey(), new Node(entry.getValue()));
+        }
+
+        for (Map.Entry<ByteArrayWrapper, byte[]> entry : sourceTree.keyDataCache.entrySet()) {
+            keyDataCache.put(entry.getKey(), Arrays.copyOf(entry.getValue(), entry.getValue().length));
+        }
+
+        for (Map.Entry<Integer, byte[]> entry : sourceTree.hangingNodes.entrySet()) {
+            hangingNodes.put(entry.getKey(), Arrays.copyOf(entry.getValue(), entry.getValue().length));
+        }
+
+        rootHash = Arrays.copyOf(sourceTree.rootHash, sourceTree.rootHash.length);
+        numLeaves = sourceTree.numLeaves;
+        depth = sourceTree.depth;
+        hasUnsavedChanges.set(sourceTree.hasUnsavedChanges.get());
+    }
+
     //endregion
 
     //region ===================== Nested Classes =====================
@@ -880,6 +976,17 @@ public class MerkleTree {
             }
 
             nodesCache.put(new ByteArrayWrapper(hash), this);
+        }
+
+        /**
+         * Copy constructor for Node.
+         */
+        public Node(Node node) {
+            this.hash = Arrays.copyOf(node.hash, node.hash.length);
+            this.left = (node.left != null) ? Arrays.copyOf(node.left, node.left.length) : null;
+            this.right = (node.right != null) ? Arrays.copyOf(node.right, node.right.length) : null;
+            this.parent = (node.parent != null) ? Arrays.copyOf(node.parent, node.parent.length) : null;
+            this.nodeHashToRemoveFromDb = (node.nodeHashToRemoveFromDb != null) ? Arrays.copyOf(node.nodeHashToRemoveFromDb, node.nodeHashToRemoveFromDb.length) : null;
         }
 
         /**
@@ -1142,11 +1249,21 @@ public class MerkleTree {
     //endregion
 
     public static void main(String[] args) throws Exception {
-        MerkleTree tree = new MerkleTree("bro/tree1");
+        MerkleTree tree = new MerkleTree("b41230566oo/tree1");
         tree.addOrUpdateData("key1".getBytes(), "value1".getBytes());
 
-        MerkleTree tree2 = tree.clone("bro/tree2");
-        System.out.println(Hex.toHexString(tree2.getData("key1".getBytes())));
-        System.out.println("ok");
+        MerkleTree tree2 = tree.clone("br2615034oo6/tree2");
+
+        tree.addOrUpdateData("key2".getBytes(), "value2".getBytes());
+        //tree.flushToDisk();
+
+        System.out.println("u");
+        tree2.update(tree);
+        System.out.println("ud");
+
+        System.out.println(Hex.toHexString(tree2.getData(("key2").getBytes())));
+        System.out.println(Hex.toHexString(tree.getData(("key2").getBytes())));
+
+        System.out.println(Arrays.equals(tree.getRootHash(), tree2.getRootHash()));
     }
 }
