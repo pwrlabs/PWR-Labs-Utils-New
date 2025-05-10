@@ -1256,10 +1256,10 @@ public class MerkleTree {
     //endregion
 
     public static void main(String[] args) throws Exception {
-        MerkleTree tree = new MerkleTree("b41230566oo/tree1");
+        MerkleTree tree = new MerkleTree("b412305666oo/tree1");
         tree.addOrUpdateData("key1".getBytes(), "value1".getBytes());
 
-        MerkleTree tree2 = tree.clone("br2615034oo6/tree2");
+        MerkleTree tree2 = tree.clone("br26150664oo6/tree2");
 
         tree.addOrUpdateData("key2".getBytes(), "value2".getBytes());
         //tree.flushToDisk();
