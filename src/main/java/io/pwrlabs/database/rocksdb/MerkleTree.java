@@ -364,6 +364,7 @@ public class MerkleTree {
         errorIfClosed();
         lock.writeLock().lock();
         try {
+            //long startTime = System.currentTimeMillis();
             try (WriteBatch batch = new WriteBatch()) {
                 //Clear old metadata from disk
                 try (RocksIterator iterator = db.newIterator(metaDataHandle)) {
@@ -402,9 +403,16 @@ public class MerkleTree {
                     db.write(writeOptions, batch);
                 }
 
+                db.compactRange(metaDataHandle);
+                db.compactRange(nodesHandle);
+                db.compactRange(keyDataHandle);
+
                 nodesCache.clear();
                 keyDataCache.clear();
                 hasUnsavedChanges.set(false);
+            } finally {
+                //long endTime = System.currentTimeMillis();
+                //System.out.println("Flush completed in " + (endTime - startTime) + " ms");
             }
         } finally {
             lock.writeLock().unlock();
@@ -1256,21 +1264,58 @@ public class MerkleTree {
     //endregion
 
     public static void main(String[] args) throws Exception {
-        MerkleTree tree = new MerkleTree("b412305666oo/tree1");
+        MerkleTree tree = new MerkleTree("w1e2111we3/tree1");
         tree.addOrUpdateData("key1".getBytes(), "value1".getBytes());
 
-        MerkleTree tree2 = tree.clone("br26150664oo6/tree2");
+        MerkleTree tree2 = tree.clone("we211131we/tree2");
 
         tree.addOrUpdateData("key2".getBytes(), "value2".getBytes());
-        //tree.flushToDisk();
+        tree.flushToDisk();
 
         System.out.println("u");
         tree2.update(tree);
         System.out.println("ud");
 
-        System.out.println(Hex.toHexString(tree2.getData(("key2").getBytes())));
-        System.out.println(Hex.toHexString(tree.getData(("key2").getBytes())));
+        tree.flushToDisk();
+        tree2.flushToDisk();
 
-        System.out.println(Arrays.equals(tree.getRootHash(), tree2.getRootHash()));
+        //compare all keys and values of both trees
+        List<byte[]> keys1 = tree.getAllKeys();
+        List<byte[]> keys2 = tree2.getAllKeys();
+
+        List<byte[]> values1 = tree.getAllData();
+        List<byte[]> values2 = tree2.getAllData();
+
+        if(keys1.size() != keys2.size()) {
+            System.out.println("Keys size do not match: " + keys1.size() + " != " + keys2.size());
+        } else {
+            System.out.println("Keys size match: " + keys1.size());
+        }
+
+        if(values1.size() != values2.size()) {
+            System.out.println("Values size do not match: " + values1.size() + " != " + values2.size());
+        } else {
+            System.out.println("Values size match: " + values1.size());
+        }
+
+        for (int i = 0; i < keys1.size(); i++) {
+            byte[] key1 = keys1.get(i);
+            byte[] value1 = values1.get(i);
+
+            byte[] key2 = keys2.get(i);
+            byte[] value2 = values2.get(i);
+
+            if (!Arrays.equals(key1, key2)) {
+                System.out.println("Keys do not match: " + Hex.toHexString(key1) + " != " + Hex.toHexString(key2));
+            } else {
+                System.out.println("Keys match: " + new String(key1));
+            }
+
+            if (!Arrays.equals(value1, value2)) {
+                System.out.println("Values do not match: " + Hex.toHexString(value1) + " != " + Hex.toHexString(value2));
+            } else {
+                System.out.println("Values match: " + new String(value1));
+            }
+        }
     }
 }
