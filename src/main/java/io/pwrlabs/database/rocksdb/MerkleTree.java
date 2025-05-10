@@ -446,6 +446,7 @@ public class MerkleTree {
     }
 
     public MerkleTree clone(String newTreeName) throws RocksDBException, IOException {
+        long startTime = System.currentTimeMillis();
         errorIfClosed();
 
         if (newTreeName == null || newTreeName.isEmpty()) {
@@ -485,6 +486,8 @@ public class MerkleTree {
             return new MerkleTree(newTreeName);
         } finally {
             lock.writeLock().unlock();
+            long endTime = System.currentTimeMillis();
+            System.out.println("Clone of " + newTreeName + " completed in " + (endTime - startTime) + " ms");
         }
     }
 
