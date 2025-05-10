@@ -514,7 +514,14 @@ public class MerkleTree {
                 throw new IllegalArgumentException("Source tree cannot be null");
             }
 
-            if(Arrays.equals(getRootHashSavedOnDisk(), sourceTree.getRootHashSavedOnDisk())) {
+            byte[] rootHashSavedOnDisk = getRootHashSavedOnDisk();
+            byte[] sourceRootHashSavedOnDisk = sourceTree.getRootHashSavedOnDisk();
+            if (
+                    (rootHashSavedOnDisk == null && sourceRootHashSavedOnDisk == null)
+                            ||
+                            (rootHashSavedOnDisk != null && sourceRootHashSavedOnDisk != null)
+                                    && Arrays.equals(getRootHashSavedOnDisk(), sourceTree.getRootHashSavedOnDisk())
+            ) {
                 //This means that this tree is already a copy of the source tree and we only need to replace the cache
                 copyCache(sourceTree);
             } else {
