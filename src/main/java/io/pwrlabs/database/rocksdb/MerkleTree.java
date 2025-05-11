@@ -223,7 +223,7 @@ public class MerkleTree {
             throw new RuntimeException(e);
         } finally {
             long endTime = System.currentTimeMillis();
-            if(trackTimeOfOperations.get() && endTime - startTime > 1) System.out.println(treeName + " getData completed in " + (endTime - startTime) + " ms");
+            if(trackTimeOfOperations.get() && endTime - startTime > 2) System.out.println(treeName + " getData completed in " + (endTime - startTime) + " ms");
         }
     }
 
