@@ -381,16 +381,18 @@ public class MerkleTree {
         try {
             try (WriteBatch batch = new WriteBatch()) {
                 //Clear old metadata from disk
-                try (RocksIterator iterator = db.newIterator(metaDataHandle)) {
-                    iterator.seekToFirst();
-                    while (iterator.isValid()) {
-                        batch.delete(metaDataHandle, iterator.key());
-                        iterator.next();
-                    }
-                }
+//                try (RocksIterator iterator = db.newIterator(metaDataHandle)) {
+//                    iterator.seekToFirst();
+//                    while (iterator.isValid()) {
+//                        batch.delete(metaDataHandle, iterator.key());
+//                        iterator.next();
+//                    }
+//                }
 
                 if (rootHash != null) {
                     batch.put(metaDataHandle, KEY_ROOT_HASH.getBytes(), rootHash);
+                } else {
+                    batch.delete(metaDataHandle, KEY_ROOT_HASH.getBytes());
                 }
                 batch.put(metaDataHandle, KEY_NUM_LEAVES.getBytes(), ByteBuffer.allocate(4).putInt(numLeaves).array());
                 batch.put(metaDataHandle, KEY_DEPTH.getBytes(), ByteBuffer.allocate(4).putInt(depth).array());
@@ -416,10 +418,6 @@ public class MerkleTree {
                 try (WriteOptions writeOptions = new WriteOptions()) {
                     db.write(writeOptions, batch);
                 }
-
-                db.compactRange(metaDataHandle);
-                db.compactRange(nodesHandle);
-                db.compactRange(keyDataHandle);
 
                 nodesCache.clear();
                 keyDataCache.clear();
@@ -698,7 +696,7 @@ public class MerkleTree {
                 .setAllowMmapReads(false)
                 .setUseDirectIoForFlushAndCompaction(true)
                 .setMaxOpenFiles(100)
-                .setMaxBackgroundJobs(1)
+                .setMaxBackgroundJobs(4)
                 .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL)
                 .setMaxManifestFileSize(64L * 1024 * 1024)  // e.g. 64 MB
                 .setMaxTotalWalSize(250L * 1024 * 1024)  // total WAL across all CFs ≤ 250 MB
