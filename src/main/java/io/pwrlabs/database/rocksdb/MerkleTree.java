@@ -238,6 +238,7 @@ public class MerkleTree {
      * @throws IllegalArgumentException If key or data is null
      */
     public void addOrUpdateData(byte[] key, byte[] data) throws RocksDBException {
+        long startTime = System.currentTimeMillis();
         errorIfClosed();
 
         if (key == null) {
@@ -248,7 +249,6 @@ public class MerkleTree {
         }
 
         getWriteLock();
-        long startTime = System.currentTimeMillis();
         try {
             // Check if key already exists
             byte[] existingData = getData(key);
@@ -375,10 +375,10 @@ public class MerkleTree {
      * Flush all in-memory changes (nodes, metadata) to RocksDB.
      */
     public void flushToDisk() throws RocksDBException {
+        long startTime = System.currentTimeMillis();
         errorIfClosed();
         getWriteLock();
         try {
-            long startTime = System.currentTimeMillis();
             try (WriteBatch batch = new WriteBatch()) {
                 //Clear old metadata from disk
                 try (RocksIterator iterator = db.newIterator(metaDataHandle)) {
@@ -424,12 +424,11 @@ public class MerkleTree {
                 nodesCache.clear();
                 keyDataCache.clear();
                 hasUnsavedChanges.set(false);
-            } finally {
-                long endTime = System.currentTimeMillis();
-                if(trackTimeOfOperations.get()) System.out.println(treeName + " flush completed in " + (endTime - startTime) + " ms");
             }
         } finally {
             releaseWriteLock();
+            long endTime = System.currentTimeMillis();
+            if(trackTimeOfOperations.get()) System.out.println(treeName + " flush completed in " + (endTime - startTime) + " ms");
         }
     }
 
@@ -437,8 +436,8 @@ public class MerkleTree {
      * Close the databases (optional, if you need cleanup).
      */
     public void close() throws RocksDBException {
-        getWriteLock();
         long startTime = System.currentTimeMillis();
+        getWriteLock();
         try {
             if (closed.get()) return;
             flushToDisk();
@@ -531,6 +530,7 @@ public class MerkleTree {
     }
 
     public void update(MerkleTree sourceTree) throws RocksDBException, IOException {
+        long startTime = System.currentTimeMillis();
         errorIfClosed();
         getWriteLock();
         sourceTree.getWriteLock();
@@ -592,6 +592,8 @@ public class MerkleTree {
         } finally {
             sourceTree.releaseWriteLock();
             releaseWriteLock();
+            long endTime = System.currentTimeMillis();
+            if(trackTimeOfOperations.get()) System.out.println(treeName + " update completed in " + (endTime - startTime) + " ms");
         }
     }
 
@@ -600,6 +602,7 @@ public class MerkleTree {
      * This is much faster than iterating through all entries and deleting them individually.
      */
     public void clear() throws RocksDBException {
+        long startTime = System.currentTimeMillis();
         errorIfClosed();
         getWriteLock();
         try {
@@ -627,6 +630,8 @@ public class MerkleTree {
 
         } finally {
             releaseWriteLock();
+            long endTime = System.currentTimeMillis();
+            if(trackTimeOfOperations.get()) System.out.println(treeName + " cleared in " + (endTime - startTime) + " ms");
         }
     }
 
