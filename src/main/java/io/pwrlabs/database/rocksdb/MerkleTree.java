@@ -223,7 +223,7 @@ public class MerkleTree {
             throw new RuntimeException(e);
         } finally {
             long endTime = System.currentTimeMillis();
-            if(trackTimeOfOperations.get()) System.out.println(treeName + " getData completed in " + (endTime - startTime) + " ms");
+            if(trackTimeOfOperations.get() && endTime - startTime > 1) System.out.println(treeName + " getData completed in " + (endTime - startTime) + " ms");
         }
     }
 
@@ -274,7 +274,7 @@ public class MerkleTree {
         } finally {
             releaseWriteLock();
             long endTime = System.currentTimeMillis();
-            if(trackTimeOfOperations.get()) System.out.println(treeName + " addOrUpdateData completed in " + (endTime - startTime) + " ms");
+            if(trackTimeOfOperations.get() && endTime - startTime > 1) System.out.println(treeName + " addOrUpdateData completed in " + (endTime - startTime) + " ms");
         }
     }
 
@@ -428,7 +428,7 @@ public class MerkleTree {
         } finally {
             releaseWriteLock();
             long endTime = System.currentTimeMillis();
-            if(trackTimeOfOperations.get()) System.out.println(treeName + " flush completed in " + (endTime - startTime) + " ms");
+            if(trackTimeOfOperations.get() && endTime - startTime > 1) System.out.println(treeName + " flush completed in " + (endTime - startTime) + " ms");
         }
     }
 
@@ -479,7 +479,7 @@ public class MerkleTree {
         } finally {
             releaseWriteLock();
             long endTime = System.currentTimeMillis();
-            if(trackTimeOfOperations.get()) System.out.println(treeName + " closed in " + (endTime - startTime) + " ms");
+            if(trackTimeOfOperations.get() && endTime - startTime > 1) System.out.println(treeName + " closed in " + (endTime - startTime) + " ms");
         }
     }
 
@@ -593,7 +593,7 @@ public class MerkleTree {
             sourceTree.releaseWriteLock();
             releaseWriteLock();
             long endTime = System.currentTimeMillis();
-            if(trackTimeOfOperations.get()) System.out.println(treeName + " update completed in " + (endTime - startTime) + " ms");
+            if(trackTimeOfOperations.get() && endTime - startTime > 1) System.out.println(treeName + " update completed in " + (endTime - startTime) + " ms");
         }
     }
 
@@ -631,7 +631,7 @@ public class MerkleTree {
         } finally {
             releaseWriteLock();
             long endTime = System.currentTimeMillis();
-            if(trackTimeOfOperations.get()) System.out.println(treeName + " cleared in " + (endTime - startTime) + " ms");
+            if(trackTimeOfOperations.get() && endTime - startTime > 1) System.out.println(treeName + " cleared in " + (endTime - startTime) + " ms");
         }
     }
 
