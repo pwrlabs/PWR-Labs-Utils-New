@@ -381,13 +381,13 @@ public class MerkleTree {
         try {
             try (WriteBatch batch = new WriteBatch()) {
                 //Clear old metadata from disk
-//                try (RocksIterator iterator = db.newIterator(metaDataHandle)) {
-//                    iterator.seekToFirst();
-//                    while (iterator.isValid()) {
-//                        batch.delete(metaDataHandle, iterator.key());
-//                        iterator.next();
-//                    }
-//                }
+                try (RocksIterator iterator = db.newIterator(metaDataHandle)) {
+                    iterator.seekToFirst();
+                    while (iterator.isValid()) {
+                        batch.delete(metaDataHandle, iterator.key());
+                        iterator.next();
+                    }
+                }
 
                 if (rootHash != null) {
                     batch.put(metaDataHandle, KEY_ROOT_HASH.getBytes(), rootHash);
