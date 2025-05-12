@@ -7,7 +7,6 @@ import io.pwrlabs.util.encoders.Hex;
 import io.pwrlabs.util.files.FileUtils;
 import io.pwrlabs.utils.ObjectsInMemoryTracker;
 import lombok.Getter;
-import lombok.SneakyThrows;
 import org.json.JSONObject;
 import org.rocksdb.*;
 
@@ -74,6 +73,7 @@ public class MerkleTree {
     private byte[] rootHash = null;
 
     private AtomicBoolean closed = new AtomicBoolean(false);
+    private AtomicBoolean absolutelyClosed = new AtomicBoolean(false); //Marked as true when the database is closed and the object is not usable anymore
     private AtomicBoolean hasUnsavedChanges = new AtomicBoolean(false);
     private AtomicBoolean trackTimeOfOperations = new AtomicBoolean(false);
     
@@ -126,7 +126,7 @@ public class MerkleTree {
      * Get the current root hash of the Merkle tree.
      */
     public byte[] getRootHash() {
-        errorIfClosed();
+        errorIfAbsolutelyClosed();
         getReadLock();
         try {
             if (rootHash == null) return null;
@@ -137,7 +137,7 @@ public class MerkleTree {
     }
 
     public byte[] getRootHashSavedOnDisk() {
-        errorIfClosed();
+        errorIfAbsolutelyClosed();
         getReadLock();
         try {
             return getData(metaDataHandle, KEY_ROOT_HASH.getBytes());
@@ -149,7 +149,7 @@ public class MerkleTree {
     }
 
     public int getNumLeaves() {
-        errorIfClosed();
+        errorIfAbsolutelyClosed();
         getReadLock();
         try {
             return numLeaves;
@@ -159,7 +159,7 @@ public class MerkleTree {
     }
 
     public int getDepth() {
-        errorIfClosed();
+        errorIfAbsolutelyClosed();
         getReadLock();
         try {
             return depth;
@@ -175,7 +175,7 @@ public class MerkleTree {
      * @throws RocksDBException If there's an error accessing RocksDB
      */
     public HashSet<Node> getAllNodes() throws RocksDBException {
-        errorIfClosed();
+        errorIfAbsolutelyClosed();
         getReadLock();
         try {
             HashSet<Node> allNodes = new HashSet<>();
@@ -213,7 +213,7 @@ public class MerkleTree {
      * @throws IllegalArgumentException If key is null
      */
     public byte[] getData(byte[] key) {
-        errorIfClosed();
+        errorIfAbsolutelyClosed();
         byte[] data = keyDataCache.get(new ByteArrayWrapper(key));
         if (data != null) return data;
 
@@ -240,7 +240,7 @@ public class MerkleTree {
      */
     public void addOrUpdateData(byte[] key, byte[] data) throws RocksDBException {
         long startTime = System.currentTimeMillis();
-        errorIfClosed();
+        errorIfAbsolutelyClosed();
 
         if (key == null) {
             throw new IllegalArgumentException("Key cannot be null");
@@ -281,7 +281,7 @@ public class MerkleTree {
 
     public void revertUnsavedChanges() {
         if(!hasUnsavedChanges.get()) return;
-        errorIfClosed();
+        errorIfAbsolutelyClosed();
 
         getWriteLock();
         try {
@@ -300,7 +300,7 @@ public class MerkleTree {
     }
 
     public boolean containsKey(byte[] key) {
-        errorIfClosed();
+        errorIfAbsolutelyClosed();
 
         if (key == null) {
             throw new IllegalArgumentException("Key cannot be null");
@@ -317,7 +317,7 @@ public class MerkleTree {
     }
 
     public List<byte[]> getAllKeys() throws RocksDBException {
-        errorIfClosed();
+        errorIfAbsolutelyClosed();
         getReadLock();
         try {
             ensureDbOpen();
@@ -337,7 +337,7 @@ public class MerkleTree {
     }
 
     public List<byte[]> getAllData() throws RocksDBException {
-        errorIfClosed();
+        errorIfAbsolutelyClosed();
         getReadLock();
         try {
             ensureDbOpen();
@@ -357,7 +357,7 @@ public class MerkleTree {
     }
 
     public BiResult<List<byte[]>, List<byte[]>> keysAndTheirValues() throws RocksDBException {
-        errorIfClosed();
+        errorIfAbsolutelyClosed();
         getReadLock();
         try {
             ensureDbOpen();
@@ -383,7 +383,7 @@ public class MerkleTree {
      */
     public void flushToDisk(boolean releaseDb) throws RocksDBException {
         long startTime = System.currentTimeMillis();
-        errorIfClosed();
+        errorIfAbsolutelyClosed();
         getWriteLock();
         try {
             if (hasUnsavedChanges.get()) {
@@ -450,9 +450,10 @@ public class MerkleTree {
         long startTime = System.currentTimeMillis();
         getWriteLock();
         try {
-            if (closed.get()) return;
+            if (absolutelyClosed.get()) return;
             flushToDisk(true);
             openTrees.remove(treeName);
+            absolutelyClosed.set(true);
         } finally {
             releaseWriteLock();
             long endTime = System.currentTimeMillis();
@@ -462,7 +463,7 @@ public class MerkleTree {
 
     public MerkleTree clone(String newTreeName) throws RocksDBException, IOException {
         long startTime = System.currentTimeMillis();
-        errorIfClosed();
+        errorIfAbsolutelyClosed();
 
         if (newTreeName == null || newTreeName.isEmpty()) {
             throw new IllegalArgumentException("New tree name cannot be null or empty");
@@ -509,7 +510,7 @@ public class MerkleTree {
 
     public void update(MerkleTree sourceTree) throws RocksDBException, IOException {
         long startTime = System.currentTimeMillis();
-        errorIfClosed();
+        errorIfAbsolutelyClosed();
         getWriteLock();
         sourceTree.getWriteLock();
         try {
@@ -581,7 +582,7 @@ public class MerkleTree {
      */
     public void clear() throws RocksDBException {
         long startTime = System.currentTimeMillis();
-        errorIfClosed();
+        errorIfAbsolutelyClosed();
         getWriteLock();
         try {
             ensureDbOpen();
@@ -1018,8 +1019,8 @@ public class MerkleTree {
         }
     }
 
-    private void errorIfClosed() {
-        if (closed.get()) {
+    private void errorIfAbsolutelyClosed() {
+        if (absolutelyClosed.get()) {
             throw new IllegalStateException("MerkleTree is closed");
         }
     }
