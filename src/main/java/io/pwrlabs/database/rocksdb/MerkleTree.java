@@ -375,6 +375,8 @@ public class MerkleTree {
      * Flush all in-memory changes (nodes, metadata) to RocksDB.
      */
     public void flushToDisk() throws RocksDBException {
+        if(!hasUnsavedChanges.get()) return;
+
         long startTime = System.currentTimeMillis();
         errorIfClosed();
         getWriteLock();
