@@ -696,7 +696,7 @@ public class MerkleTree {
                 .setAllowMmapReads(false)
                 .setUseDirectIoForFlushAndCompaction(true)
                 .setMaxOpenFiles(100)
-                .setMaxBackgroundJobs(4)
+                .setMaxBackgroundJobs(1)
                 .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL)
                 .setMaxManifestFileSize(64L * 1024 * 1024)  // e.g. 64 MB
                 .setMaxTotalWalSize(250L * 1024 * 1024)  // total WAL across all CFs ≤ 250 MB
