@@ -626,6 +626,67 @@ public class MerkleTree {
         return json;
     }
 
+    /**
+     * Gracefully closes the underlying RocksDB instance and its associated column family handles,
+     * without destroying the MerkleTree object itself.
+     * <p>
+     * This method is intended to free up system resources (such as file handles, memory, and background threads)
+     * for trees that are temporarily inactive. The MerkleTree instance remains usable, and the database
+     * can be reopened later when needed.
+     * </p>
+     *
+     * <p>Calling this method multiple times is safe — it will have no effect if the database is already closed.</p>
+     *
+     * <p><b>Important:</b> The caller must ensure that all necessary data has been flushed to disk
+     * before invoking this method (e.g., via {@code flushToDisk()}).</p>
+     */
+    public void releaseDatabase() {
+        getWriteLock();
+        try {
+            if(closed.get()) return;
+
+            if (metaDataHandle != null) {
+                try {
+                    metaDataHandle.close();
+                    metaDataHandle = null;
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+
+            if (nodesHandle != null) {
+                try {
+                    nodesHandle.close();
+                    nodesHandle = null;
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+
+            if (keyDataHandle != null) {
+                try {
+                    keyDataHandle.close();
+                    keyDataHandle = null;
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+
+            if (db != null) {
+                try {
+                    db.close();
+                    db = null;
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+
+            closed.set(true);
+        } finally {
+            releaseWriteLock();
+        }
+    }
+
     //endregion
 
     //region ===================== Private Methods =====================
@@ -726,67 +787,6 @@ public class MerkleTree {
         this.keyDataHandle = cfHandles.get(3);
         
         closed.set(false);
-    }
-
-    /**
-     * Gracefully closes the underlying RocksDB instance and its associated column family handles,
-     * without destroying the MerkleTree object itself.
-     * <p>
-     * This method is intended to free up system resources (such as file handles, memory, and background threads)
-     * for trees that are temporarily inactive. The MerkleTree instance remains usable, and the database
-     * can be reopened later when needed.
-     * </p>
-     *
-     * <p>Calling this method multiple times is safe — it will have no effect if the database is already closed.</p>
-     *
-     * <p><b>Important:</b> The caller must ensure that all necessary data has been flushed to disk 
-     * before invoking this method (e.g., via {@code flushToDisk()}).</p>
-     */
-    private void releaseDatabase() {
-        getWriteLock();
-        try {
-            if(closed.get()) return;
-
-            if (metaDataHandle != null) {
-                try {
-                    metaDataHandle.close();
-                    metaDataHandle = null;
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-
-            if (nodesHandle != null) {
-                try {
-                    nodesHandle.close();
-                    nodesHandle = null;
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-
-            if (keyDataHandle != null) {
-                try {
-                    keyDataHandle.close();
-                    keyDataHandle = null;
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-
-            if (db != null) {
-                try {
-                    db.close();
-                    db = null;
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-
-            closed.set(true);
-        } finally {
-            releaseWriteLock();
-        }
     }
 
     private synchronized void ensureDbOpen() throws RocksDBException {
