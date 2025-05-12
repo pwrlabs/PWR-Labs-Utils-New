@@ -7,6 +7,7 @@ import io.pwrlabs.util.encoders.Hex;
 import io.pwrlabs.util.files.FileUtils;
 import io.pwrlabs.utils.ObjectsInMemoryTracker;
 import lombok.Getter;
+import lombok.SneakyThrows;
 import org.json.JSONObject;
 import org.rocksdb.*;
 
@@ -73,7 +74,6 @@ public class MerkleTree {
     private byte[] rootHash = null;
 
     private AtomicBoolean closed = new AtomicBoolean(false);
-    private AtomicBoolean absolutelyClosed = new AtomicBoolean(false); //Marked as true when the database is closed and the object is not usable anymore
     private AtomicBoolean hasUnsavedChanges = new AtomicBoolean(false);
     private AtomicBoolean trackTimeOfOperations = new AtomicBoolean(false);
     
@@ -126,7 +126,7 @@ public class MerkleTree {
      * Get the current root hash of the Merkle tree.
      */
     public byte[] getRootHash() {
-        errorIfAbsolutelyClosed();
+        errorIfClosed();
         getReadLock();
         try {
             if (rootHash == null) return null;
@@ -137,10 +137,10 @@ public class MerkleTree {
     }
 
     public byte[] getRootHashSavedOnDisk() {
-        errorIfAbsolutelyClosed();
+        errorIfClosed();
         getReadLock();
         try {
-            return getData(metaDataHandle, KEY_ROOT_HASH.getBytes());
+            return db.get(metaDataHandle, KEY_ROOT_HASH.getBytes());
         } catch (RocksDBException e) {
             throw new RuntimeException(e);
         } finally {
@@ -149,7 +149,7 @@ public class MerkleTree {
     }
 
     public int getNumLeaves() {
-        errorIfAbsolutelyClosed();
+        errorIfClosed();
         getReadLock();
         try {
             return numLeaves;
@@ -159,7 +159,7 @@ public class MerkleTree {
     }
 
     public int getDepth() {
-        errorIfAbsolutelyClosed();
+        errorIfClosed();
         getReadLock();
         try {
             return depth;
@@ -175,15 +175,14 @@ public class MerkleTree {
      * @throws RocksDBException If there's an error accessing RocksDB
      */
     public HashSet<Node> getAllNodes() throws RocksDBException {
-        errorIfAbsolutelyClosed();
+        errorIfClosed();
         getReadLock();
         try {
             HashSet<Node> allNodes = new HashSet<>();
 
             // First flush any pending changes to disk
-            flushToDisk(false);
+            flushToDisk();
 
-            ensureDbOpen();
             // Use RocksIterator to iterate through all nodes in the nodesHandle column family
             try (RocksIterator iterator = db.newIterator(nodesHandle)) {
                 iterator.seekToFirst();
@@ -213,13 +212,13 @@ public class MerkleTree {
      * @throws IllegalArgumentException If key is null
      */
     public byte[] getData(byte[] key) {
-        errorIfAbsolutelyClosed();
+        errorIfClosed();
         byte[] data = keyDataCache.get(new ByteArrayWrapper(key));
         if (data != null) return data;
 
         long startTime = System.currentTimeMillis();
         try {
-            return getData(keyDataHandle, key);
+            return db.get(keyDataHandle, key);
         } catch (RocksDBException e) {
             throw new RuntimeException(e);
         } finally {
@@ -240,7 +239,7 @@ public class MerkleTree {
      */
     public void addOrUpdateData(byte[] key, byte[] data) throws RocksDBException {
         long startTime = System.currentTimeMillis();
-        errorIfAbsolutelyClosed();
+        errorIfClosed();
 
         if (key == null) {
             throw new IllegalArgumentException("Key cannot be null");
@@ -281,7 +280,7 @@ public class MerkleTree {
 
     public void revertUnsavedChanges() {
         if(!hasUnsavedChanges.get()) return;
-        errorIfAbsolutelyClosed();
+        errorIfClosed();
 
         getWriteLock();
         try {
@@ -300,7 +299,7 @@ public class MerkleTree {
     }
 
     public boolean containsKey(byte[] key) {
-        errorIfAbsolutelyClosed();
+        errorIfClosed();
 
         if (key == null) {
             throw new IllegalArgumentException("Key cannot be null");
@@ -308,7 +307,7 @@ public class MerkleTree {
 
         getReadLock();
         try {
-            return getData(keyDataHandle, key) != null;
+            return db.get(keyDataHandle, key) != null;
         } catch (RocksDBException e) {
             throw new RuntimeException(e);
         } finally {
@@ -316,12 +315,10 @@ public class MerkleTree {
         }
     }
 
-    public List<byte[]> getAllKeys() throws RocksDBException {
-        errorIfAbsolutelyClosed();
+    public List<byte[]> getAllKeys() {
+        errorIfClosed();
         getReadLock();
         try {
-            ensureDbOpen();
-
             List<byte[]> keys = new ArrayList<>();
             try (RocksIterator iterator = db.newIterator(keyDataHandle)) {
                 iterator.seekToFirst();
@@ -336,12 +333,10 @@ public class MerkleTree {
         }
     }
 
-    public List<byte[]> getAllData() throws RocksDBException {
-        errorIfAbsolutelyClosed();
+    public List<byte[]> getAllData() {
+        errorIfClosed();
         getReadLock();
         try {
-            ensureDbOpen();
-
             List<byte[]> data = new ArrayList<>();
             try (RocksIterator iterator = db.newIterator(keyDataHandle)) {
                 iterator.seekToFirst();
@@ -356,12 +351,10 @@ public class MerkleTree {
         }
     }
 
-    public BiResult<List<byte[]>, List<byte[]>> keysAndTheirValues() throws RocksDBException {
-        errorIfAbsolutelyClosed();
+    public BiResult<List<byte[]>, List<byte[]>> keysAndTheirValues() {
+        errorIfClosed();
         getReadLock();
         try {
-            ensureDbOpen();
-
             List<byte[]> keys = new ArrayList<>();
             List<byte[]> values = new ArrayList<>();
             try (RocksIterator iterator = db.newIterator(keyDataHandle)) {
@@ -381,61 +374,55 @@ public class MerkleTree {
     /**
      * Flush all in-memory changes (nodes, metadata) to RocksDB.
      */
-    public void flushToDisk(boolean releaseDb) throws RocksDBException {
+    public void flushToDisk() throws RocksDBException {
         long startTime = System.currentTimeMillis();
-        errorIfAbsolutelyClosed();
+        errorIfClosed();
         getWriteLock();
         try {
-            if (hasUnsavedChanges.get()) {
-                ensureDbOpen();
-
-                try (WriteBatch batch = new WriteBatch()) {
-                    //Clear old metadata from disk
-                    try (RocksIterator iterator = db.newIterator(metaDataHandle)) {
-                        iterator.seekToFirst();
-                        while (iterator.isValid()) {
-                            batch.delete(metaDataHandle, iterator.key());
-                            iterator.next();
-                        }
+            try (WriteBatch batch = new WriteBatch()) {
+                //Clear old metadata from disk
+                try (RocksIterator iterator = db.newIterator(metaDataHandle)) {
+                    iterator.seekToFirst();
+                    while (iterator.isValid()) {
+                        batch.delete(metaDataHandle, iterator.key());
+                        iterator.next();
                     }
-
-                    if (rootHash != null) {
-                        batch.put(metaDataHandle, KEY_ROOT_HASH.getBytes(), rootHash);
-                    } else {
-                        batch.delete(metaDataHandle, KEY_ROOT_HASH.getBytes());
-                    }
-                    batch.put(metaDataHandle, KEY_NUM_LEAVES.getBytes(), ByteBuffer.allocate(4).putInt(numLeaves).array());
-                    batch.put(metaDataHandle, KEY_DEPTH.getBytes(), ByteBuffer.allocate(4).putInt(depth).array());
-
-                    for (Map.Entry<Integer, byte[]> entry : hangingNodes.entrySet()) {
-                        Integer level = entry.getKey();
-                        byte[] nodeHash = entry.getValue();
-                        batch.put(metaDataHandle, (KEY_HANGING_NODE_PREFIX + level).getBytes(), nodeHash);
-                    }
-
-                    for (Node node : nodesCache.values()) {
-                        batch.put(nodesHandle, node.hash, node.encode());
-
-                        if (node.getNodeHashToRemoveFromDb() != null) {
-                            batch.delete(nodesHandle, node.getNodeHashToRemoveFromDb());
-                        }
-                    }
-
-                    for (Map.Entry<ByteArrayWrapper, byte[]> entry : keyDataCache.entrySet()) {
-                        batch.put(keyDataHandle, entry.getKey().data(), entry.getValue());
-                    }
-
-                    try (WriteOptions writeOptions = new WriteOptions()) {
-                        db.write(writeOptions, batch);
-                    }
-
-                    nodesCache.clear();
-                    keyDataCache.clear();
-                    hasUnsavedChanges.set(false);
                 }
-            }
 
-            if(releaseDb) releaseDatabase();
+                if (rootHash != null) {
+                    batch.put(metaDataHandle, KEY_ROOT_HASH.getBytes(), rootHash);
+                } else {
+                    batch.delete(metaDataHandle, KEY_ROOT_HASH.getBytes());
+                }
+                batch.put(metaDataHandle, KEY_NUM_LEAVES.getBytes(), ByteBuffer.allocate(4).putInt(numLeaves).array());
+                batch.put(metaDataHandle, KEY_DEPTH.getBytes(), ByteBuffer.allocate(4).putInt(depth).array());
+
+                for (Map.Entry<Integer, byte[]> entry : hangingNodes.entrySet()) {
+                    Integer level = entry.getKey();
+                    byte[] nodeHash = entry.getValue();
+                    batch.put(metaDataHandle, (KEY_HANGING_NODE_PREFIX + level).getBytes(), nodeHash);
+                }
+
+                for (Node node : nodesCache.values()) {
+                    batch.put(nodesHandle, node.hash, node.encode());
+
+                    if (node.getNodeHashToRemoveFromDb() != null) {
+                        batch.delete(nodesHandle, node.getNodeHashToRemoveFromDb());
+                    }
+                }
+
+                for (Map.Entry<ByteArrayWrapper, byte[]> entry : keyDataCache.entrySet()) {
+                    batch.put(keyDataHandle, entry.getKey().data(), entry.getValue());
+                }
+
+                try (WriteOptions writeOptions = new WriteOptions()) {
+                    db.write(writeOptions, batch);
+                }
+
+                nodesCache.clear();
+                keyDataCache.clear();
+                hasUnsavedChanges.set(false);
+            }
         } finally {
             releaseWriteLock();
             long endTime = System.currentTimeMillis();
@@ -450,10 +437,43 @@ public class MerkleTree {
         long startTime = System.currentTimeMillis();
         getWriteLock();
         try {
-            if (absolutelyClosed.get()) return;
-            flushToDisk(true);
+            if (closed.get()) return;
+            flushToDisk();
+
+            if (metaDataHandle != null) {
+                try {
+                    metaDataHandle.close();
+                } catch (Exception e) {
+                    // Log error
+                }
+            }
+
+            if (nodesHandle != null) {
+                try {
+                    nodesHandle.close();
+                } catch (Exception e) {
+                    // Log error
+                }
+            }
+
+            if (keyDataHandle != null) {
+                try {
+                    keyDataHandle.close();
+                } catch (Exception e) {
+                    // Log error
+                }
+            }
+
+            if (db != null) {
+                try {
+                    db.close();
+                } catch (Exception e) {
+                    // Log error
+                }
+            }
+
             openTrees.remove(treeName);
-            absolutelyClosed.set(true);
+            closed.set(true);
         } finally {
             releaseWriteLock();
             long endTime = System.currentTimeMillis();
@@ -463,7 +483,7 @@ public class MerkleTree {
 
     public MerkleTree clone(String newTreeName) throws RocksDBException, IOException {
         long startTime = System.currentTimeMillis();
-        errorIfAbsolutelyClosed();
+        errorIfClosed();
 
         if (newTreeName == null || newTreeName.isEmpty()) {
             throw new IllegalArgumentException("New tree name cannot be null or empty");
@@ -490,8 +510,7 @@ public class MerkleTree {
 
         getWriteLock();
         try {
-            flushToDisk(false);
-            ensureDbOpen();
+            flushToDisk();
 
             try (Checkpoint checkpoint = Checkpoint.create(db)) {
                 checkpoint.createCheckpoint(destDir.getAbsolutePath());
@@ -510,7 +529,7 @@ public class MerkleTree {
 
     public void update(MerkleTree sourceTree) throws RocksDBException, IOException {
         long startTime = System.currentTimeMillis();
-        errorIfAbsolutelyClosed();
+        errorIfClosed();
         getWriteLock();
         sourceTree.getWriteLock();
         try {
@@ -546,7 +565,7 @@ public class MerkleTree {
                         db = null;
                 };
 
-                sourceTree.flushToDisk(false);
+                sourceTree.flushToDisk();
 
                 File thisTreesDirectory = new File(path);
                 FileUtils.deleteDirectory(thisTreesDirectory);
@@ -582,11 +601,9 @@ public class MerkleTree {
      */
     public void clear() throws RocksDBException {
         long startTime = System.currentTimeMillis();
-        errorIfAbsolutelyClosed();
+        errorIfClosed();
         getWriteLock();
         try {
-            ensureDbOpen();
-
             // mark every key in each CF as deleted (empty → 0xFF)
             byte[] start = new byte[0];
             byte[] end   = new byte[]{(byte)0xFF};
@@ -625,67 +642,6 @@ public class MerkleTree {
         json.put("keyDataCacheSize", keyDataCache.size());
         json.put("hangingNodesCacheSize", hangingNodes.size());
         return json;
-    }
-
-    /**
-     * Gracefully closes the underlying RocksDB instance and its associated column family handles,
-     * without destroying the MerkleTree object itself.
-     * <p>
-     * This method is intended to free up system resources (such as file handles, memory, and background threads)
-     * for trees that are temporarily inactive. The MerkleTree instance remains usable, and the database
-     * can be reopened later when needed.
-     * </p>
-     *
-     * <p>Calling this method multiple times is safe — it will have no effect if the database is already closed.</p>
-     *
-     * <p><b>Important:</b> The caller must ensure that all necessary data has been flushed to disk
-     * before invoking this method (e.g., via {@code flushToDisk()}).</p>
-     */
-    public void releaseDatabase() {
-        getWriteLock();
-        try {
-            if(closed.get()) return;
-
-            if (metaDataHandle != null) {
-                try {
-                    metaDataHandle.close();
-                    metaDataHandle = null;
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-
-            if (nodesHandle != null) {
-                try {
-                    nodesHandle.close();
-                    nodesHandle = null;
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-
-            if (keyDataHandle != null) {
-                try {
-                    keyDataHandle.close();
-                    keyDataHandle = null;
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-
-            if (db != null) {
-                try {
-                    db.close();
-                    db = null;
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-
-            closed.set(true);
-        } finally {
-            releaseWriteLock();
-        }
     }
 
     //endregion
@@ -786,24 +742,6 @@ public class MerkleTree {
         this.metaDataHandle = cfHandles.get(1);
         this.nodesHandle = cfHandles.get(2);
         this.keyDataHandle = cfHandles.get(3);
-        
-        closed.set(false);
-    }
-
-    private synchronized void ensureDbOpen() throws RocksDBException {
-        if (closed.get()) initializeDb();
-    }
-
-
-    private byte[] getData(ColumnFamilyHandle handle, byte[] key) throws RocksDBException {
-        getReadLock();
-        try {
-            ensureDbOpen();
-            
-            return db.get(handle, key);
-        } finally {
-            releaseReadLock();
-        }
     }
 
     /**
@@ -812,14 +750,14 @@ public class MerkleTree {
     private void loadMetaData() throws RocksDBException {
         getReadLock();
         try {
-            this.rootHash = getData(metaDataHandle, KEY_ROOT_HASH.getBytes());
+            this.rootHash = db.get(metaDataHandle, KEY_ROOT_HASH.getBytes());
 
-            byte[] numLeavesBytes = getData(metaDataHandle, KEY_NUM_LEAVES.getBytes());
+            byte[] numLeavesBytes = db.get(metaDataHandle, KEY_NUM_LEAVES.getBytes());
             this.numLeaves = (numLeavesBytes == null)
                     ? 0
                     : ByteBuffer.wrap(numLeavesBytes).getInt();
 
-            byte[] depthBytes = getData(metaDataHandle, KEY_DEPTH.getBytes());
+            byte[] depthBytes = db.get(metaDataHandle, KEY_DEPTH.getBytes());
             this.depth = (depthBytes == null)
                     ? 0
                     : ByteBuffer.wrap(depthBytes).getInt();
@@ -827,7 +765,7 @@ public class MerkleTree {
             // Load any hangingNodes from metadata
             hangingNodes.clear();
             for (int i = 0; i <= depth; i++) {
-                byte[] hash = getData(metaDataHandle, (KEY_HANGING_NODE_PREFIX + i).getBytes());
+                byte[] hash = db.get(metaDataHandle, (KEY_HANGING_NODE_PREFIX + i).getBytes());
                 if (hash != null) {
                     Node node = getNodeByHash(hash);
                     hangingNodes.put(i, node.hash);
@@ -850,7 +788,7 @@ public class MerkleTree {
             Node node = nodesCache.get(baw);
             if (node == null) {
                 try {
-                    byte[] encodedData = getData(nodesHandle, hash);
+                    byte[] encodedData = db.get(nodesHandle, hash);
                     if (encodedData == null) {
                         return null;
                     }
@@ -1019,8 +957,8 @@ public class MerkleTree {
         }
     }
 
-    private void errorIfAbsolutelyClosed() {
-        if (absolutelyClosed.get()) {
+    private void errorIfClosed() {
+        if (closed.get()) {
             throw new IllegalStateException("MerkleTree is closed");
         }
     }
@@ -1042,7 +980,7 @@ public class MerkleTree {
             hangingNodes.put(entry.getKey(), Arrays.copyOf(entry.getValue(), entry.getValue().length));
         }
 
-        rootHash = (sourceTree.rootHash != null) ? Arrays.copyOf(sourceTree.rootHash, sourceTree.rootHash.length) : null;
+        rootHash = Arrays.copyOf(sourceTree.rootHash, sourceTree.rootHash.length);
         numLeaves = sourceTree.numLeaves;
         depth = sourceTree.depth;
         hasUnsavedChanges.set(sourceTree.hasUnsavedChanges.get());
@@ -1386,20 +1324,20 @@ public class MerkleTree {
     //endregion
 
     public static void main(String[] args) throws Exception {
-        MerkleTree tree = new MerkleTree("w1e21191we3/tree1");
+        MerkleTree tree = new MerkleTree("w1e2111we3/tree1");
         tree.addOrUpdateData("key1".getBytes(), "value1".getBytes());
 
-        MerkleTree tree2 = tree.clone("we9211131we/tree2");
+        MerkleTree tree2 = tree.clone("we211131we/tree2");
 
         tree.addOrUpdateData("key2".getBytes(), "value2".getBytes());
-        tree.flushToDisk(true);
+        tree.flushToDisk();
 
         System.out.println("u");
         tree2.update(tree);
         System.out.println("ud");
 
-        tree.flushToDisk(true);
-        tree2.flushToDisk(true);
+        tree.flushToDisk();
+        tree2.flushToDisk();
 
         //compare all keys and values of both trees
         List<byte[]> keys1 = tree.getAllKeys();
