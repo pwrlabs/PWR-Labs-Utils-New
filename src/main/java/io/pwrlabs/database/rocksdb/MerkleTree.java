@@ -386,51 +386,53 @@ public class MerkleTree {
         errorIfClosed();
         getWriteLock();
         try {
-            ensureDbOpen();
+            if (hasUnsavedChanges.get()) {
+                ensureDbOpen();
 
-            try (WriteBatch batch = new WriteBatch()) {
-                //Clear old metadata from disk
-                try (RocksIterator iterator = db.newIterator(metaDataHandle)) {
-                    iterator.seekToFirst();
-                    while (iterator.isValid()) {
-                        batch.delete(metaDataHandle, iterator.key());
-                        iterator.next();
+                try (WriteBatch batch = new WriteBatch()) {
+                    //Clear old metadata from disk
+                    try (RocksIterator iterator = db.newIterator(metaDataHandle)) {
+                        iterator.seekToFirst();
+                        while (iterator.isValid()) {
+                            batch.delete(metaDataHandle, iterator.key());
+                            iterator.next();
+                        }
                     }
-                }
 
-                if (rootHash != null) {
-                    batch.put(metaDataHandle, KEY_ROOT_HASH.getBytes(), rootHash);
-                } else {
-                    batch.delete(metaDataHandle, KEY_ROOT_HASH.getBytes());
-                }
-                batch.put(metaDataHandle, KEY_NUM_LEAVES.getBytes(), ByteBuffer.allocate(4).putInt(numLeaves).array());
-                batch.put(metaDataHandle, KEY_DEPTH.getBytes(), ByteBuffer.allocate(4).putInt(depth).array());
-
-                for (Map.Entry<Integer, byte[]> entry : hangingNodes.entrySet()) {
-                    Integer level = entry.getKey();
-                    byte[] nodeHash = entry.getValue();
-                    batch.put(metaDataHandle, (KEY_HANGING_NODE_PREFIX + level).getBytes(), nodeHash);
-                }
-
-                for (Node node : nodesCache.values()) {
-                    batch.put(nodesHandle, node.hash, node.encode());
-
-                    if (node.getNodeHashToRemoveFromDb() != null) {
-                        batch.delete(nodesHandle, node.getNodeHashToRemoveFromDb());
+                    if (rootHash != null) {
+                        batch.put(metaDataHandle, KEY_ROOT_HASH.getBytes(), rootHash);
+                    } else {
+                        batch.delete(metaDataHandle, KEY_ROOT_HASH.getBytes());
                     }
-                }
+                    batch.put(metaDataHandle, KEY_NUM_LEAVES.getBytes(), ByteBuffer.allocate(4).putInt(numLeaves).array());
+                    batch.put(metaDataHandle, KEY_DEPTH.getBytes(), ByteBuffer.allocate(4).putInt(depth).array());
 
-                for (Map.Entry<ByteArrayWrapper, byte[]> entry : keyDataCache.entrySet()) {
-                    batch.put(keyDataHandle, entry.getKey().data(), entry.getValue());
-                }
+                    for (Map.Entry<Integer, byte[]> entry : hangingNodes.entrySet()) {
+                        Integer level = entry.getKey();
+                        byte[] nodeHash = entry.getValue();
+                        batch.put(metaDataHandle, (KEY_HANGING_NODE_PREFIX + level).getBytes(), nodeHash);
+                    }
 
-                try (WriteOptions writeOptions = new WriteOptions()) {
-                    db.write(writeOptions, batch);
-                }
+                    for (Node node : nodesCache.values()) {
+                        batch.put(nodesHandle, node.hash, node.encode());
 
-                nodesCache.clear();
-                keyDataCache.clear();
-                hasUnsavedChanges.set(false);
+                        if (node.getNodeHashToRemoveFromDb() != null) {
+                            batch.delete(nodesHandle, node.getNodeHashToRemoveFromDb());
+                        }
+                    }
+
+                    for (Map.Entry<ByteArrayWrapper, byte[]> entry : keyDataCache.entrySet()) {
+                        batch.put(keyDataHandle, entry.getKey().data(), entry.getValue());
+                    }
+
+                    try (WriteOptions writeOptions = new WriteOptions()) {
+                        db.write(writeOptions, batch);
+                    }
+
+                    nodesCache.clear();
+                    keyDataCache.clear();
+                    hasUnsavedChanges.set(false);
+                }
             }
 
             if(releaseDb) releaseDatabase();
