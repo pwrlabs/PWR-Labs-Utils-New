@@ -75,7 +75,7 @@ public class MerkleTree {
 
     private AtomicBoolean closed = new AtomicBoolean(false);
     private AtomicBoolean hasUnsavedChanges = new AtomicBoolean(false);
-    private AtomicBoolean trackTimeOfOperations = new AtomicBoolean(true);
+    private AtomicBoolean trackTimeOfOperations = new AtomicBoolean(false);
     
     /**
      * Lock for reading/writing to the tree.
@@ -523,7 +523,7 @@ public class MerkleTree {
         } finally {
             releaseWriteLock();
             long endTime = System.currentTimeMillis();
-            System.out.println("Clone of " + newTreeName + " completed in " + (endTime - startTime) + " ms");
+            if(trackTimeOfOperations.get()) System.out.println("Clone of " + newTreeName + " completed in " + (endTime - startTime) + " ms");
         }
     }
 
