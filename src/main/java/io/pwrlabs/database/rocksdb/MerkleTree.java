@@ -553,9 +553,10 @@ public class MerkleTree {
             }
 
             byte[] sourceRootHash = sourceTree.getRootHash();
+            byte[] thisRootHash = getRootHash();
             if (sourceRootHash == null) {
-                clear();
-                return;
+                if(thisRootHash == null) return;
+                else clear();
             } else {
                 byte[] rootHashSavedOnDisk = getRootHashSavedOnDisk();
                 byte[] sourceRootHashSavedOnDisk = sourceTree.getRootHashSavedOnDisk();
