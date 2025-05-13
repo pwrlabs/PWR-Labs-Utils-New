@@ -33,6 +33,14 @@ public class MerkleTree {
     }
 
     private static Map<String /*Tree Name*/, MerkleTree> openTrees = new ConcurrentHashMap<>();
+
+    public static List<MerkleTree> getAllOpenMerkleTrees() {
+        List<MerkleTree> trees = new ArrayList<>();
+        for (Map.Entry<String, MerkleTree> entry : openTrees.entrySet()) {
+            trees.add(entry.getValue());
+        }
+        return trees;
+    }
     //endregion
 
     //region ===================== Constants =====================
