@@ -84,7 +84,7 @@ public class MerkleTree {
     private AtomicBoolean closed = new AtomicBoolean(false);
     private AtomicBoolean hasUnsavedChanges = new AtomicBoolean(false);
     private AtomicBoolean trackTimeOfOperations = new AtomicBoolean(false);
-    
+
     /**
      * Lock for reading/writing to the tree.
      */
@@ -231,7 +231,8 @@ public class MerkleTree {
             throw new RuntimeException(e);
         } finally {
             long endTime = System.currentTimeMillis();
-            if(trackTimeOfOperations.get() && endTime - startTime > 2) System.out.println(treeName + " getData completed in " + (endTime - startTime) + " ms");
+            if (trackTimeOfOperations.get() && endTime - startTime > 2)
+                System.out.println(treeName + " getData completed in " + (endTime - startTime) + " ms");
         }
     }
 
@@ -282,12 +283,13 @@ public class MerkleTree {
         } finally {
             releaseWriteLock();
             long endTime = System.currentTimeMillis();
-            if(trackTimeOfOperations.get() && endTime - startTime > 1) System.out.println(treeName + " addOrUpdateData completed in " + (endTime - startTime) + " ms");
+            if (trackTimeOfOperations.get() && endTime - startTime > 1)
+                System.out.println(treeName + " addOrUpdateData completed in " + (endTime - startTime) + " ms");
         }
     }
 
     public void revertUnsavedChanges() {
-        if(!hasUnsavedChanges.get()) return;
+        if (!hasUnsavedChanges.get()) return;
         errorIfClosed();
 
         getWriteLock();
@@ -383,7 +385,7 @@ public class MerkleTree {
      * Flush all in-memory changes (nodes, metadata) to RocksDB.
      */
     public void flushToDisk() throws RocksDBException {
-        if(!hasUnsavedChanges.get()) return;
+        if (!hasUnsavedChanges.get()) return;
 
         long startTime = System.currentTimeMillis();
         errorIfClosed();
@@ -436,7 +438,8 @@ public class MerkleTree {
         } finally {
             releaseWriteLock();
             long endTime = System.currentTimeMillis();
-            if(trackTimeOfOperations.get() && endTime - startTime > 1) System.out.println(treeName + " flush completed in " + (endTime - startTime) + " ms");
+            if (trackTimeOfOperations.get() && endTime - startTime > 1)
+                System.out.println(treeName + " flush completed in " + (endTime - startTime) + " ms");
         }
     }
 
@@ -487,7 +490,8 @@ public class MerkleTree {
         } finally {
             releaseWriteLock();
             long endTime = System.currentTimeMillis();
-            if(trackTimeOfOperations.get() && endTime - startTime > 1) System.out.println(treeName + " closed in " + (endTime - startTime) + " ms");
+            if (trackTimeOfOperations.get() && endTime - startTime > 1)
+                System.out.println(treeName + " closed in " + (endTime - startTime) + " ms");
         }
     }
 
@@ -533,7 +537,8 @@ public class MerkleTree {
         } finally {
             releaseWriteLock();
             long endTime = System.currentTimeMillis();
-            if(trackTimeOfOperations.get()) System.out.println("Clone of " + newTreeName + " completed in " + (endTime - startTime) + " ms");
+            if (trackTimeOfOperations.get())
+                System.out.println("Clone of " + newTreeName + " completed in " + (endTime - startTime) + " ms");
         }
     }
 
@@ -547,61 +552,70 @@ public class MerkleTree {
                 throw new IllegalArgumentException("Source tree cannot be null");
             }
 
-            byte[] rootHashSavedOnDisk = getRootHashSavedOnDisk();
-            byte[] sourceRootHashSavedOnDisk = sourceTree.getRootHashSavedOnDisk();
-            if (
-                    (rootHashSavedOnDisk == null && sourceRootHashSavedOnDisk == null)
-                            ||
-                            (rootHashSavedOnDisk != null && sourceRootHashSavedOnDisk != null)
-                                    && Arrays.equals(getRootHashSavedOnDisk(), sourceTree.getRootHashSavedOnDisk())
-            ) {
-                //This means that this tree is already a copy of the source tree and we only need to replace the cache
-                copyCache(sourceTree);
+            byte[] sourceRootHash = sourceTree.getRootHash();
+            if (sourceRootHash == null) {
+                clear();
+                return;
             } else {
-                if(metaDataHandle != null) {
-                    metaDataHandle.close();
-                    metaDataHandle = null;
-                }
-                if(nodesHandle != null) {
-                    nodesHandle.close();
-                    nodesHandle = null;
-                }
-                if(keyDataHandle != null) {
-                    keyDataHandle.close();
-                    keyDataHandle = null;
-                }
-                if(db != null && !db.isClosed()) {
+                byte[] rootHashSavedOnDisk = getRootHashSavedOnDisk();
+                byte[] sourceRootHashSavedOnDisk = sourceTree.getRootHashSavedOnDisk();
+
+                if (
+                        (rootHashSavedOnDisk == null && sourceRootHashSavedOnDisk == null)
+                                ||
+                                (rootHashSavedOnDisk != null && sourceRootHashSavedOnDisk != null)
+                                        && Arrays.equals(getRootHashSavedOnDisk(), sourceTree.getRootHashSavedOnDisk())
+                ) {
+                    //This means that this tree is already a copy of the source tree and we only need to replace the cache
+                    copyCache(sourceTree);
+                } else {
+                    if (metaDataHandle != null) {
+                        metaDataHandle.close();
+                        metaDataHandle = null;
+                    }
+                    if (nodesHandle != null) {
+                        nodesHandle.close();
+                        nodesHandle = null;
+                    }
+                    if (keyDataHandle != null) {
+                        keyDataHandle.close();
+                        keyDataHandle = null;
+                    }
+                    if (db != null && !db.isClosed()) {
                         db.close();
                         db = null;
-                };
+                    }
+                    ;
 
-                sourceTree.flushToDisk();
+                    sourceTree.flushToDisk();
 
-                File thisTreesDirectory = new File(path);
-                FileUtils.deleteDirectory(thisTreesDirectory);
+                    File thisTreesDirectory = new File(path);
+                    FileUtils.deleteDirectory(thisTreesDirectory);
 
-                try (Checkpoint checkpoint = Checkpoint.create(sourceTree.db)) {
-                    checkpoint.createCheckpoint(thisTreesDirectory.getAbsolutePath());
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    throw new RuntimeException(e);
+                    try (Checkpoint checkpoint = Checkpoint.create(sourceTree.db)) {
+                        checkpoint.createCheckpoint(thisTreesDirectory.getAbsolutePath());
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        throw new RuntimeException(e);
+                    }
+
+                    // Reinitialize the database
+                    initializeDb();
+                    loadMetaData();
+
+                    nodesCache.clear();
+                    keyDataCache.clear();
+                    hangingNodes.clear();
+                    hasUnsavedChanges.set(false);
                 }
-
-                // Reinitialize the database
-                initializeDb();
-                loadMetaData();
-
-                nodesCache.clear();
-                keyDataCache.clear();
-                hangingNodes.clear();
-                hasUnsavedChanges.set(false);
             }
 
         } finally {
             sourceTree.releaseWriteLock();
             releaseWriteLock();
             long endTime = System.currentTimeMillis();
-            if(trackTimeOfOperations.get() && endTime - startTime > 1) System.out.println(treeName + " update completed in " + (endTime - startTime) + " ms");
+            if (trackTimeOfOperations.get() && endTime - startTime > 1)
+                System.out.println(treeName + " update completed in " + (endTime - startTime) + " ms");
         }
     }
 
@@ -616,12 +630,12 @@ public class MerkleTree {
         try {
             // mark every key in each CF as deleted (empty → 0xFF)
             byte[] start = new byte[0];
-            byte[] end   = new byte[]{(byte)0xFF};
+            byte[] end = new byte[]{(byte) 0xFF};
 
             // these three calls are each O(1)
             db.deleteRange(metaDataHandle, start, end);
-            db.deleteRange(nodesHandle,    start, end);
-            db.deleteRange(keyDataHandle,  start, end);
+            db.deleteRange(nodesHandle, start, end);
+            db.deleteRange(keyDataHandle, start, end);
 
             // OPTIONAL: reclaim space immediately
             db.compactRange(metaDataHandle);
@@ -632,14 +646,15 @@ public class MerkleTree {
             nodesCache.clear();
             keyDataCache.clear();
             hangingNodes.clear();
-            rootHash  = null;
+            rootHash = null;
             numLeaves = depth = 0;
             hasUnsavedChanges.set(false);
 
         } finally {
             releaseWriteLock();
             long endTime = System.currentTimeMillis();
-            if(trackTimeOfOperations.get() && endTime - startTime > 1) System.out.println(treeName + " cleared in " + (endTime - startTime) + " ms");
+            if (trackTimeOfOperations.get() && endTime - startTime > 1)
+                System.out.println(treeName + " cleared in " + (endTime - startTime) + " ms");
         }
     }
 
@@ -661,42 +676,42 @@ public class MerkleTree {
         long startTime = System.currentTimeMillis();
         lock.writeLock().lock();
         long endTime = System.currentTimeMillis();
-        
-        if(trackTimeOfOperations.get() && endTime - startTime >= 2) {
+
+        if (trackTimeOfOperations.get() && endTime - startTime >= 2) {
             System.out.println(treeName + " getWriteLock unexpectedly took " + (endTime - startTime) + " ms");
         }
     }
-    
+
     private void releaseWriteLock() {
         long startTime = System.currentTimeMillis();
         lock.writeLock().unlock();
         long endTime = System.currentTimeMillis();
-        
-        if(trackTimeOfOperations.get() && endTime - startTime >= 2) {
+
+        if (trackTimeOfOperations.get() && endTime - startTime >= 2) {
             System.out.println(treeName + " releaseWriteLock unexpectedly took " + (endTime - startTime) + " ms");
         }
     }
-    
+
     private void getReadLock() {
         long startTime = System.currentTimeMillis();
         lock.readLock().lock();
         long endTime = System.currentTimeMillis();
-        
-        if(trackTimeOfOperations.get() && endTime - startTime >= 2) {
+
+        if (trackTimeOfOperations.get() && endTime - startTime >= 2) {
             System.out.println(treeName + " getReadLock unexpectedly took " + (endTime - startTime) + " ms");
         }
     }
-    
+
     private void releaseReadLock() {
         long startTime = System.currentTimeMillis();
         lock.readLock().unlock();
         long endTime = System.currentTimeMillis();
-        
-        if(trackTimeOfOperations.get() && endTime - startTime >= 2) {
+
+        if (trackTimeOfOperations.get() && endTime - startTime >= 2) {
             System.out.println(treeName + " releaseReadLock unexpectedly took " + (endTime - startTime) + " ms");
         }
     }
-    
+
     private void initializeDb() throws RocksDBException {
         // 1) DBOptions
         DBOptions dbOptions = new DBOptions()
@@ -990,7 +1005,7 @@ public class MerkleTree {
             hangingNodes.put(entry.getKey(), Arrays.copyOf(entry.getValue(), entry.getValue().length));
         }
 
-        rootHash = Arrays.copyOf(sourceTree.rootHash, sourceTree.rootHash.length);
+        rootHash = sourceTree.rootHash == null ? null : Arrays.copyOf(sourceTree.rootHash, sourceTree.rootHash.length);
         numLeaves = sourceTree.numLeaves;
         depth = sourceTree.depth;
         hasUnsavedChanges.set(sourceTree.hasUnsavedChanges.get());
@@ -1356,13 +1371,13 @@ public class MerkleTree {
         List<byte[]> values1 = tree.getAllData();
         List<byte[]> values2 = tree2.getAllData();
 
-        if(keys1.size() != keys2.size()) {
+        if (keys1.size() != keys2.size()) {
             System.out.println("Keys size do not match: " + keys1.size() + " != " + keys2.size());
         } else {
             System.out.println("Keys size match: " + keys1.size());
         }
 
-        if(values1.size() != values2.size()) {
+        if (values1.size() != values2.size()) {
             System.out.println("Values size do not match: " + values1.size() + " != " + values2.size());
         } else {
             System.out.println("Values size match: " + values1.size());
