@@ -5,7 +5,6 @@ import io.pwrlabs.util.encoders.BiResult;
 import io.pwrlabs.util.encoders.ByteArrayWrapper;
 import io.pwrlabs.util.encoders.Hex;
 import io.pwrlabs.util.files.FileUtils;
-import io.pwrlabs.utils.ObjectsInMemoryTracker;
 import lombok.Getter;
 import lombok.SneakyThrows;
 import org.json.JSONObject;
@@ -93,7 +92,7 @@ public class MerkleTree {
 
     //region ===================== Constructors =====================
     public MerkleTree(String treeName) throws RocksDBException {
-        ObjectsInMemoryTracker.trackObject(this);
+        //ObjectsInMemoryTracker.trackObject(this);
         RocksDB.loadLibrary();
         this.treeName = treeName;
         errorIf(openTrees.containsKey(treeName), "There is already open instance of this tree");
