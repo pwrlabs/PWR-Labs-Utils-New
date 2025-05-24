@@ -1,5 +1,6 @@
 package io.pwrlabs.database.rocksdb;
 
+import com.sun.tools.javac.Main;
 import io.pwrlabs.hashing.PWRHash;
 import io.pwrlabs.util.encoders.BiResult;
 import io.pwrlabs.util.encoders.ByteArrayWrapper;
@@ -8,6 +9,7 @@ import io.pwrlabs.util.files.FileUtils;
 import lombok.Getter;
 import lombok.SneakyThrows;
 import org.json.JSONObject;
+import org.junit.platform.commons.logging.LoggerFactory;
 import org.rocksdb.*;
 
 import java.io.File;
@@ -27,6 +29,8 @@ import static io.pwrlabs.newerror.NewError.errorIf;
 public class MerkleTree {
 
     //region ===================== Statics =====================
+    private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(Main.class);
+
     static {
         RocksDB.loadLibrary();
     }
@@ -495,6 +499,7 @@ public class MerkleTree {
     }
 
     public MerkleTree clone(String newTreeName) throws RocksDBException, IOException {
+        logger.info("Cloning MerkleTree: " + treeName + " to new tree: " + newTreeName);
         long startTime = System.currentTimeMillis();
         errorIfClosed();
 
@@ -567,8 +572,10 @@ public class MerkleTree {
                                         && Arrays.equals(getRootHashSavedOnDisk(), sourceTree.getRootHashSavedOnDisk())
                 ) {
                     //This means that this tree is already a copy of the source tree and we only need to replace the cache
+                    logger.info("Updating MerkleTree: " + treeName + " with source tree: " + sourceTree.treeName + " by updating the cache");
                     copyCache(sourceTree);
                 } else {
+                    logger.info("Updating MerkleTree: " + treeName + " with source tree: " + sourceTree.treeName + " by cloning the tree");
                     if (metaDataHandle != null) {
                         metaDataHandle.close();
                         metaDataHandle = null;
