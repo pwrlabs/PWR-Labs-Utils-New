@@ -262,7 +262,7 @@ public class MerkleTree {
 
         getWriteLock();
         try {
-            // Check if key already exists
+ //            Check if key already exists
             byte[] existingData = getData(key);
             byte[] oldLeafHash = existingData == null ? null : calculateLeafHash(key, existingData);
 
@@ -724,56 +724,43 @@ public class MerkleTree {
         DBOptions dbOptions = new DBOptions()
                 .setCreateIfMissing(true)
                 .setCreateMissingColumnFamilies(true)
-                .setUseDirectReads(true)
-                .setAllowMmapReads(false)
-                .setUseDirectIoForFlushAndCompaction(true)
                 .setMaxOpenFiles(100)
                 .setMaxBackgroundJobs(1)
-                .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL)
-                .setMaxManifestFileSize(64L * 1024 * 1024)  // e.g. 64 MB
-                .setMaxTotalWalSize(250L * 1024 * 1024)  // total WAL across all CFs ≤ 250 MB
-                .setWalSizeLimitMB(250)                 // (optional) per-WAL-file soft limit
-                .setKeepLogFileNum(3);    // keep at most 3 WAL files, regardless of age/size
+                .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL);
+        // (omit setNoBlockCache or any “disable cache” flags)
 
-// 2) Table format: no cache, small blocks
+        // 2) Table format: enable a 64 MB off-heap LRU cache
         BlockBasedTableConfig tableConfig = new BlockBasedTableConfig()
-                .setNoBlockCache(true)
-                .setBlockSize(4 * 1024)        // 4 KB blocks
+                .setBlockCache(new LRUCache(64 * 1024L * 1024L))  // 64 MiB
+                .setBlockSize(4 * 1024)        // 4 KiB blocks
                 .setFormatVersion(5)
                 .setChecksumType(ChecksumType.kxxHash);
 
-// 3) ColumnFamilyOptions: no compression, single write buffer
+        // 3) ColumnFamilyOptions: reference our tableConfig
         ColumnFamilyOptions cfOptions = new ColumnFamilyOptions()
                 .setTableFormatConfig(tableConfig)
                 .setCompressionType(CompressionType.NO_COMPRESSION)
-                .setWriteBufferSize(16 * 1024 * 1024)  // 16 MB memtable
+                .setWriteBufferSize(16 * 1024 * 1024)
                 .setMaxWriteBufferNumber(1)
                 .setMinWriteBufferNumberToMerge(1)
                 .optimizeUniversalStyleCompaction();
 
-        // 4. Prepare column families
-        List<ColumnFamilyDescriptor> cfDescriptors = new ArrayList<>();
+        // 4) Prepare column-family descriptors & handles as before…
+        List<ColumnFamilyDescriptor> cfDescriptors = List.of(
+                new ColumnFamilyDescriptor(RocksDB.DEFAULT_COLUMN_FAMILY, cfOptions),
+                new ColumnFamilyDescriptor(METADATA_DB_NAME.getBytes(), cfOptions),
+                new ColumnFamilyDescriptor(NODES_DB_NAME.getBytes(), cfOptions),
+                new ColumnFamilyDescriptor(KEY_DATA_DB_NAME.getBytes(), cfOptions)
+        );
         List<ColumnFamilyHandle> cfHandles = new ArrayList<>();
 
-        // Always need default CF
-        cfDescriptors.add(new ColumnFamilyDescriptor(
-                RocksDB.DEFAULT_COLUMN_FAMILY, cfOptions));
-
-        // Our custom CFs
-        cfDescriptors.add(new ColumnFamilyDescriptor(
-                METADATA_DB_NAME.getBytes(), cfOptions));
-        cfDescriptors.add(new ColumnFamilyDescriptor(
-                NODES_DB_NAME.getBytes(), cfOptions));
-        cfDescriptors.add(new ColumnFamilyDescriptor(
-                KEY_DATA_DB_NAME.getBytes(), cfOptions));
-
-        // 5. Open DB with all column families
+        // 5) Open the DB
         this.db = RocksDB.open(dbOptions, path, cfDescriptors, cfHandles);
 
-        // 6. Assign handles
+        // 6) Assign handles…
         this.metaDataHandle = cfHandles.get(1);
-        this.nodesHandle = cfHandles.get(2);
-        this.keyDataHandle = cfHandles.get(3);
+        this.nodesHandle    = cfHandles.get(2);
+        this.keyDataHandle  = cfHandles.get(3);
     }
 
     /**
@@ -1356,10 +1343,10 @@ public class MerkleTree {
     //endregion
 
     public static void main(String[] args) throws Exception {
-        MerkleTree tree = new MerkleTree("w1e2111we3/tree1");
+        MerkleTree tree = new MerkleTree("w1e21115we3/tree1");
         tree.addOrUpdateData("key1".getBytes(), "value1".getBytes());
 
-        MerkleTree tree2 = tree.clone("we211131we/tree2");
+        MerkleTree tree2 = tree.clone("we2151131we/tree2");
 
         tree.addOrUpdateData("key2".getBytes(), "value2".getBytes());
         tree.flushToDisk();
