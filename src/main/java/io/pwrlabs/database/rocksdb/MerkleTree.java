@@ -18,6 +18,7 @@ import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -36,6 +37,11 @@ public class MerkleTree {
     }
 
     private static Map<String /*Tree Name*/, MerkleTree> openTrees = new ConcurrentHashMap<>();
+
+    @Getter
+    private static AtomicInteger treesCloned = new AtomicInteger(0);
+    @Getter
+    private static AtomicInteger treesUpdatedWithoutClone = new AtomicInteger(0);
 
     public static List<MerkleTree> getAllOpenMerkleTrees() {
         List<MerkleTree> trees = new ArrayList<>();
@@ -543,6 +549,7 @@ public class MerkleTree {
             long endTime = System.currentTimeMillis();
             if (trackTimeOfOperations.get())
                 System.out.println("Clone of " + newTreeName + " completed in " + (endTime - startTime) + " ms");
+            treesCloned.incrementAndGet();
         }
     }
 
@@ -574,6 +581,7 @@ public class MerkleTree {
                     //This means that this tree is already a copy of the source tree and we only need to replace the cache
                     logger.info("Updating MerkleTree: " + treeName + " with source tree: " + sourceTree.treeName + " by updating the cache");
                     copyCache(sourceTree);
+                    treesUpdatedWithoutClone.incrementAndGet();
                 } else {
                     logger.info("Updating MerkleTree: " + treeName + " with source tree: " + sourceTree.treeName + " by cloning the tree");
                     if (metaDataHandle != null) {
@@ -614,6 +622,7 @@ public class MerkleTree {
                     keyDataCache.clear();
                     hangingNodes.clear();
                     hasUnsavedChanges.set(false);
+                    treesCloned.incrementAndGet();
                 }
             }
 
