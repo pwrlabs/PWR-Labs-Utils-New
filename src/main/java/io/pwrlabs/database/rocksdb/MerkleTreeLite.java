@@ -95,7 +95,7 @@ public class MerkleTreeLite {
         errorIf(openTrees.containsKey(treeName), "There is already open instance of this tree");
 
         // 1. Ensure directory exists
-        path = "merkleTree/" + treeName;
+        path = "merkleTreeLite/" + treeName;
         File directory = new File(path);
         if (!directory.exists() && !directory.mkdirs()) {
             throw new RocksDBException("Failed to create directory: " + path);
