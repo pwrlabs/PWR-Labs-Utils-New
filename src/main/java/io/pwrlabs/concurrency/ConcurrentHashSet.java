@@ -13,19 +13,19 @@ public class ConcurrentHashSet<T> {
         // Default constructor
     }
 
-    public void add(T element) {
+    public boolean add(T element) {
         lock.writeLock().lock();
         try {
-            set.add(element);
+            return set.add(element);
         } finally {
             lock.writeLock().unlock();
         }
     }
 
-    public void remove(T element) {
+    public boolean remove(T element) {
         lock.writeLock().lock();
         try {
-            set.remove(element);
+            return set.remove(element);
         } finally {
             lock.writeLock().unlock();
         }
