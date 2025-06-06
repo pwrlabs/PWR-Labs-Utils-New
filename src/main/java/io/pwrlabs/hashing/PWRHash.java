@@ -39,4 +39,10 @@ public class PWRHash {
         new java.security.SecureRandom().nextBytes(randomBytes);
         return hash256(randomBytes);
     }
+
+    public static byte[] random224() {
+        byte[] randomBytes = new byte[28]; // 224 bits = 28 bytes
+        new java.security.SecureRandom().nextBytes(randomBytes);
+        return hash224(randomBytes);
+    }
 }
