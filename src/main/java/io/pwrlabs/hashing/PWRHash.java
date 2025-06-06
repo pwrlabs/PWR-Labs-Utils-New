@@ -32,4 +32,11 @@ public class PWRHash {
         keccak256.update(input2, 0, input2.length);
         return keccak256.digest();
     }
+
+    //returns random 256 hash
+    public static byte[] random256() {
+        byte[] randomBytes = new byte[32]; // 256 bits = 32 bytes
+        new java.security.SecureRandom().nextBytes(randomBytes);
+        return hash256(randomBytes);
+    }
 }
