@@ -736,8 +736,7 @@ public class MerkleTree {
                 .setMaxOpenFiles(-1)
                 .setMaxBackgroundJobs(1)
                 .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL)
-                .setAllowMmapReads(true)  // Enable memory-mapped reads for better performance
-                .setAllowMmapWrites(false);  // Keep writes safe;
+                .setAllowMmapReads(true);  // Enable memory-mapped reads for better performance
         // (omit setNoBlockCache or any “disable cache” flags)
 
         // 2) Table format: enable a 64 MB off-heap LRU cache
