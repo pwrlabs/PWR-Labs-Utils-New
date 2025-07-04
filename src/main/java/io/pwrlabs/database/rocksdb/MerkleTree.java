@@ -268,7 +268,7 @@ public class MerkleTree {
 
         getWriteLock();
         try {
- //            Check if key already exists
+            //            Check if key already exists
             byte[] existingData = getData(key);
             byte[] oldLeafHash = existingData == null ? null : calculateLeafHash(key, existingData);
 
@@ -566,7 +566,7 @@ public class MerkleTree {
             byte[] sourceRootHash = sourceTree.getRootHash();
             byte[] thisRootHash = getRootHash();
             if (sourceRootHash == null) {
-                if(thisRootHash == null) return;
+                if (thisRootHash == null) return;
                 else clear();
             } else {
                 byte[] rootHashSavedOnDisk = getRootHashSavedOnDisk();
@@ -733,26 +733,35 @@ public class MerkleTree {
         DBOptions dbOptions = new DBOptions()
                 .setCreateIfMissing(true)
                 .setCreateMissingColumnFamilies(true)
-                .setMaxOpenFiles(100)
+                .setMaxOpenFiles(-1)
                 .setMaxBackgroundJobs(1)
-                .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL);
+                .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL)
+                .setAllowMmapReads(true)  // Enable memory-mapped reads for better performance
+                .setAllowMmapWrites(false);  // Keep writes safe;
         // (omit setNoBlockCache or any “disable cache” flags)
 
         // 2) Table format: enable a 64 MB off-heap LRU cache
         BlockBasedTableConfig tableConfig = new BlockBasedTableConfig()
                 .setBlockCache(new LRUCache(64 * 1024L * 1024L))  // 64 MiB
-                .setBlockSize(4 * 1024)        // 4 KiB blocks
+                .setFilterPolicy(new BloomFilter(10, false))
+                .setBlockSize(32 * 1024)        // 16 KiB blocks
                 .setFormatVersion(5)
-                .setChecksumType(ChecksumType.kxxHash);
+                .setChecksumType(ChecksumType.kxxHash)
+                .setCacheIndexAndFilterBlocks(true)
+                .setPinL0FilterAndIndexBlocksInCache(true);
 
         // 3) ColumnFamilyOptions: reference our tableConfig
         ColumnFamilyOptions cfOptions = new ColumnFamilyOptions()
                 .setTableFormatConfig(tableConfig)
-                .setCompressionType(CompressionType.NO_COMPRESSION)
+                .setMemTableConfig(new HashSkipListMemTableConfig())
+                .setCompressionType(CompressionType.NO_COMPRESSION)  // No compression for max read speed
+                .setBottommostCompressionType(CompressionType.NO_COMPRESSION)
                 .setWriteBufferSize(16 * 1024 * 1024)
                 .setMaxWriteBufferNumber(1)
                 .setMinWriteBufferNumberToMerge(1)
-                .optimizeUniversalStyleCompaction();
+                .optimizeUniversalStyleCompaction()
+                .optimizeForPointLookup(1_000_000);
+
 
         // 4) Prepare column-family descriptors & handles as before…
         List<ColumnFamilyDescriptor> cfDescriptors = List.of(
@@ -768,8 +777,8 @@ public class MerkleTree {
 
         // 6) Assign handles…
         this.metaDataHandle = cfHandles.get(1);
-        this.nodesHandle    = cfHandles.get(2);
-        this.keyDataHandle  = cfHandles.get(3);
+        this.nodesHandle = cfHandles.get(2);
+        this.keyDataHandle = cfHandles.get(3);
     }
 
     /**
