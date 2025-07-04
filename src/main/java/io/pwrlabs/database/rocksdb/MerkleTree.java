@@ -736,7 +736,8 @@ public class MerkleTree {
                 .setMaxOpenFiles(-1)
                 .setMaxBackgroundJobs(1)
                 .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL)
-                .setAllowMmapReads(true);  // Enable memory-mapped reads for better performance
+                .setAllowMmapReads(true)
+                .setAllowMmapWrites(false); ;  // Enable memory-mapped reads for better performance
         // (omit setNoBlockCache or any “disable cache” flags)
 
         // 2) Table format: enable a 64 MB off-heap LRU cache
@@ -752,7 +753,6 @@ public class MerkleTree {
         // 3) ColumnFamilyOptions: reference our tableConfig
         ColumnFamilyOptions cfOptions = new ColumnFamilyOptions()
                 .setTableFormatConfig(tableConfig)
-                .setMemTableConfig(new HashSkipListMemTableConfig())
                 .setCompressionType(CompressionType.NO_COMPRESSION)  // No compression for max read speed
                 .setBottommostCompressionType(CompressionType.NO_COMPRESSION)
                 .setWriteBufferSize(16 * 1024 * 1024)
