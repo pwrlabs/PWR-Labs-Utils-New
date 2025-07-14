@@ -742,7 +742,7 @@ public class MerkleTree {
 
         // 2) Table format: enable a 64 MB off-heap LRU cache
         BlockBasedTableConfig tableConfig = new BlockBasedTableConfig()
-                .setBlockCache(new LRUCache(32 * 1024L * 1024L))  // 64 MiB
+                .setBlockCache(new LRUCache(16 * 1024L * 1024L))  // 64 MiB
                 .setFilterPolicy(new BloomFilter(10, false))
                 .setBlockSize(32 * 1024)        // 16 KiB blocks
                 .setFormatVersion(5)
@@ -755,7 +755,7 @@ public class MerkleTree {
                 .setTableFormatConfig(tableConfig)
                 .setCompressionType(CompressionType.NO_COMPRESSION)  // No compression for max read speed
                 .setBottommostCompressionType(CompressionType.NO_COMPRESSION)
-                .setWriteBufferSize(16 * 1024 * 1024)
+                .setWriteBufferSize(8 * 1024 * 1024)
                 .setMaxWriteBufferNumber(1)
                 .setMinWriteBufferNumberToMerge(1)
                 .optimizeUniversalStyleCompaction()
