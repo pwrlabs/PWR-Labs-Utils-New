@@ -733,7 +733,7 @@ public class MerkleTree {
         DBOptions dbOptions = new DBOptions()
                 .setCreateIfMissing(true)
                 .setCreateMissingColumnFamilies(true)
-                .setMaxOpenFiles(-1)
+                .setMaxOpenFiles(1000)
                 .setMaxBackgroundJobs(1)
                 .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL)
                 .setAllowMmapReads(true)
@@ -742,7 +742,7 @@ public class MerkleTree {
 
         // 2) Table format: enable a 64 MB off-heap LRU cache
         BlockBasedTableConfig tableConfig = new BlockBasedTableConfig()
-                .setBlockCache(new LRUCache(64 * 1024L * 1024L))  // 64 MiB
+                .setBlockCache(new LRUCache(32 * 1024L * 1024L))  // 64 MiB
                 .setFilterPolicy(new BloomFilter(10, false))
                 .setBlockSize(32 * 1024)        // 16 KiB blocks
                 .setFormatVersion(5)
