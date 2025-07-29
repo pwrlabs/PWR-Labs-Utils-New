@@ -6,20 +6,23 @@ import io.pwrlabs.util.encoders.BiResult;
 import io.pwrlabs.util.encoders.ByteArrayWrapper;
 import io.pwrlabs.util.encoders.Hex;
 import io.pwrlabs.util.files.FileUtils;
+import io.pwrlabs.utils.TriggerEvent;
 import lombok.Getter;
-import lombok.SneakyThrows;
 import org.json.JSONObject;
-import org.junit.platform.commons.logging.LoggerFactory;
 import org.rocksdb.*;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static io.pwrlabs.newerror.NewError.errorIf;
@@ -82,7 +85,23 @@ public class MerkleTree {
      */
     private final Map<ByteArrayWrapper, Node> nodesCache = new ConcurrentHashMap<>();
     private final Map<Integer /*level*/, byte[]> hangingNodes = new ConcurrentHashMap<>();
-    private final Map<ByteArrayWrapper /*Key*/, byte[] /*data*/> keyDataCache = new ConcurrentHashMap<>();
+    /**
+     * Stores key–value entries that have already been incorporated into the Merkle tree
+     * and have contributed to the current root hash.
+     * This cache is used to quickly retrieve recently committed values without having to
+     * read them from RocksDB or re-traverse the Merkle tree.
+     */
+    private final Map<ByteArrayWrapper /*Key*/, byte[] /*data*/> keyDataCommittedCache = new ConcurrentHashMap<>();
+
+    /**
+     * Stores key–value entries that have been written or updated but have not yet been
+     * incorporated into the Merkle tree, and therefore have not affected the current root hash.
+     * This acts as a staging area for pending state updates before they are committed.
+     */
+    private final Map<ByteArrayWrapper /*Key*/, byte[] /*data*/> keyDataPendingCache = new ConcurrentHashMap<>();
+
+    private final LinkedBlockingQueue<PendingChanges> pendingChangesQueue = new LinkedBlockingQueue<>();
+
 
     @Getter
     private int numLeaves = 0;
@@ -98,6 +117,8 @@ public class MerkleTree {
      * Lock for reading/writing to the tree.
      */
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
+
+    private final TriggerEvent pendingChangesProcessedEvent = new TriggerEvent();
     //endregion
 
     //region ===================== Constructors =====================
@@ -129,6 +150,8 @@ public class MerkleTree {
         } catch (Exception e) {
             // Ignore compaction errors
         }
+
+        initPendingChangesProcessor();
     }
 
     public MerkleTree(String treeName, boolean trackTimeOfOperations) throws RocksDBException {
@@ -146,8 +169,13 @@ public class MerkleTree {
         errorIfClosed();
         getReadLock();
         try {
+            if(keyDataPendingCache.size() > 0) {
+                pendingChangesProcessedEvent.awaitEvent();
+            }
             if (rootHash == null) return null;
             else return Arrays.copyOf(rootHash, rootHash.length);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
         } finally {
             releaseReadLock();
         }
@@ -230,18 +258,26 @@ public class MerkleTree {
      */
     public byte[] getData(byte[] key) {
         errorIfClosed();
-        byte[] data = keyDataCache.get(new ByteArrayWrapper(key));
+        byte[] data = keyDataPendingCache.get(new ByteArrayWrapper(key));
+        if(data == null) keyDataCommittedCache.get(new ByteArrayWrapper(key));
         if (data != null) return data;
 
-        long startTime = System.currentTimeMillis();
         try {
             return db.get(keyDataHandle, key);
         } catch (RocksDBException e) {
             throw new RuntimeException(e);
-        } finally {
-            long endTime = System.currentTimeMillis();
-            if (trackTimeOfOperations.get() && endTime - startTime > 2)
-                System.out.println(treeName + " getData completed in " + (endTime - startTime) + " ms");
+        }
+    }
+
+    public byte[] getCommittedData(byte[] key) {
+        errorIfClosed();
+        byte[] data = keyDataCommittedCache.get(new ByteArrayWrapper(key));
+        if (data != null) return data;
+
+        try {
+            return db.get(keyDataHandle, key);
+        } catch (RocksDBException e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -268,27 +304,9 @@ public class MerkleTree {
 
         getWriteLock();
         try {
-            //            Check if key already exists
-            byte[] existingData = getData(key);
-            byte[] oldLeafHash = existingData == null ? null : calculateLeafHash(key, existingData);
-
-            // Calculate hash from key and data
-            byte[] newLeafHash = calculateLeafHash(key, data);
-
-            if (oldLeafHash != null && Arrays.equals(oldLeafHash, newLeafHash)) return;
-
-            // Store key-data mapping
-            keyDataCache.put(new ByteArrayWrapper(key), data);
+            pendingChangesQueue.add(new PendingChanges(key, data));
+            keyDataPendingCache.put(new ByteArrayWrapper(key), data);
             hasUnsavedChanges.set(true);
-
-            if (oldLeafHash == null) {
-                // Key doesn't exist, add new leaf
-                addLeaf(new Node(newLeafHash));
-            } else {
-                // Key exists, update leaf
-                // First get the old leaf hash
-                updateLeaf(oldLeafHash, newLeafHash);
-            }
         } finally {
             releaseWriteLock();
             long endTime = System.currentTimeMillis();
@@ -305,7 +323,7 @@ public class MerkleTree {
         try {
             nodesCache.clear();
             hangingNodes.clear();
-            keyDataCache.clear();
+            keyDataCommittedCache.clear();
 
             loadMetaData();
 
@@ -432,7 +450,7 @@ public class MerkleTree {
                     }
                 }
 
-                for (Map.Entry<ByteArrayWrapper, byte[]> entry : keyDataCache.entrySet()) {
+                for (Map.Entry<ByteArrayWrapper, byte[]> entry : keyDataCommittedCache.entrySet()) {
                     batch.put(keyDataHandle, entry.getKey().data(), entry.getValue());
                 }
 
@@ -441,7 +459,7 @@ public class MerkleTree {
                 }
 
                 nodesCache.clear();
-                keyDataCache.clear();
+                keyDataCommittedCache.clear();
                 hasUnsavedChanges.set(false);
             }
         } finally {
@@ -619,7 +637,7 @@ public class MerkleTree {
                     loadMetaData();
 
                     nodesCache.clear();
-                    keyDataCache.clear();
+                    keyDataCommittedCache.clear();
                     hangingNodes.clear();
                     hasUnsavedChanges.set(false);
                     treesCloned.incrementAndGet();
@@ -660,7 +678,7 @@ public class MerkleTree {
 
             // reset your in-memory state
             nodesCache.clear();
-            keyDataCache.clear();
+            keyDataCommittedCache.clear();
             hangingNodes.clear();
             rootHash = null;
             numLeaves = depth = 0;
@@ -680,7 +698,7 @@ public class MerkleTree {
         json.put("numLeaves", numLeaves);
         json.put("depth", depth);
         json.put("nodeCacheSize", nodesCache.size());
-        json.put("keyDataCacheSize", keyDataCache.size());
+        json.put("keyDataCacheSize", keyDataCommittedCache.size());
         json.put("hangingNodesCacheSize", hangingNodes.size());
         return json;
     }
@@ -737,7 +755,8 @@ public class MerkleTree {
                 .setMaxBackgroundJobs(1)
                 .setInfoLogLevel(InfoLogLevel.FATAL_LEVEL)
                 .setAllowMmapReads(true)
-                .setAllowMmapWrites(false); ;  // Enable memory-mapped reads for better performance
+                .setAllowMmapWrites(false);
+        ;  // Enable memory-mapped reads for better performance
         // (omit setNoBlockCache or any “disable cache” flags)
 
         // 2) Table format: enable a 64 MB off-heap LRU cache
@@ -1001,15 +1020,15 @@ public class MerkleTree {
 
     private void copyCache(MerkleTree sourceTree) {
         nodesCache.clear();
-        keyDataCache.clear();
+        keyDataCommittedCache.clear();
         hangingNodes.clear();
 
         for (Map.Entry<ByteArrayWrapper, Node> entry : sourceTree.nodesCache.entrySet()) {
             nodesCache.put(entry.getKey(), new Node(entry.getValue()));
         }
 
-        for (Map.Entry<ByteArrayWrapper, byte[]> entry : sourceTree.keyDataCache.entrySet()) {
-            keyDataCache.put(entry.getKey(), Arrays.copyOf(entry.getValue(), entry.getValue().length));
+        for (Map.Entry<ByteArrayWrapper, byte[]> entry : sourceTree.keyDataCommittedCache.entrySet()) {
+            keyDataCommittedCache.put(entry.getKey(), Arrays.copyOf(entry.getValue(), entry.getValue().length));
         }
 
         for (Map.Entry<Integer, byte[]> entry : sourceTree.hangingNodes.entrySet()) {
@@ -1020,6 +1039,53 @@ public class MerkleTree {
         numLeaves = sourceTree.numLeaves;
         depth = sourceTree.depth;
         hasUnsavedChanges.set(sourceTree.hasUnsavedChanges.get());
+    }
+
+    private void initPendingChangesProcessor() {
+        Thread thread = new Thread(() -> {
+            while (!closed.get()) {
+                try {
+                    PendingChanges changes = pendingChangesQueue.take();
+
+                    byte[] key = changes.getKey();
+                    byte[] data = changes.getData();
+
+                    byte[] existingData = getCommittedData(key);
+                    byte[] oldLeafHash = existingData == null ? null : calculateLeafHash(key, existingData);
+
+                    // Calculate hash from key and data
+                    byte[] newLeafHash = calculateLeafHash(key, data);
+
+                    if (oldLeafHash != null && Arrays.equals(oldLeafHash, newLeafHash)) continue;
+
+                    if (oldLeafHash == null) {
+                        // Key doesn't exist, add new leaf
+                        addLeaf(new Node(newLeafHash));
+                    } else {
+                        // Key exists, update leaf
+                        // First get the old leaf hash
+                        updateLeaf(oldLeafHash, newLeafHash);
+                    }
+
+                    // Store key-data mapping
+                    hasUnsavedChanges.set(true);
+                    keyDataCommittedCache.put(new ByteArrayWrapper(key), data);
+                    keyDataPendingCache.compute(new ByteArrayWrapper(key), (k, v) -> {
+                        if (v == null || Arrays.equals(v, data)) return null;
+                        else return v;
+                    });
+
+                    pendingChangesProcessedEvent.triggerEvent();
+                } catch (Exception e) {
+                    logger.error("Error processing pending changes in MerkleTree: " + treeName, e);
+                    e.printStackTrace();
+                }
+            }
+        });
+
+        thread.setDaemon(true);
+        thread.setName("PendingChangesProcessor-" + treeName);
+        thread.start();
     }
 
     //endregion
@@ -1355,6 +1421,17 @@ public class MerkleTree {
             // between source and cloned trees while still representing the same logical node
 
             return true;
+        }
+    }
+
+    @Getter
+    public class PendingChanges {
+        private final byte[] key;
+        private final byte[] data;
+
+        public PendingChanges(byte[] key, byte[] data) {
+            this.key = key;
+            this.data = data;
         }
     }
     //endregion
