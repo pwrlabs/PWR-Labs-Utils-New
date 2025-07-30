@@ -388,6 +388,15 @@ public class MerkleTree {
         errorIfClosed();
 
         writeLock.lock();
+        if( pendingChangesBeingProcessed.get()) {
+            // Wait for pending changes to be processed before flushing
+            try {
+                pendingChangesProcessedEvent.awaitEvent();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Interrupted while waiting for pending changes to be processed", e);
+            }
+        }
         try (WriteBatch batch = new WriteBatch()) {
             //Clear old metadata from disk
             try (RocksIterator iterator = db.newIterator(metaDataHandle)) {
